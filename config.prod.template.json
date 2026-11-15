@@ -1,0 +1,11 @@
+{
+  "OPENAI_API_KEY": "your_production_api_key_here",
+  "OPENAI_MODEL": "gpt-4o",
+  "OPENAI_MAX_TOKENS": "1000",
+  "OPENAI_TEMPERATURE": "0.3",
+  "MAX_IMAGE_SIZE": "1024",
+  "IMAGE_QUALITY": "85",
+  "REQUEST_TIMEOUT_SECONDS": "60",
+  "MAX_RETRIES": "3",
+  "APP_ENV": "production"
+} 
