@@ -13,18 +13,18 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   final TextEditingController _messageController = TextEditingController();
 
   final List<Map<String, dynamic>> monthlyData = [
-    {'month': 'Month 1', 'risk': 'Low', 'color': Colors.green.shade600},
-    {'month': 'Month 2', 'risk': 'Low-medium', 'color': Colors.orange.shade600},
-    {'month': 'Month 3', 'risk': 'Medium', 'color': Colors.orange.shade700},
-    {'month': 'Month 4', 'risk': 'Low high', 'color': Colors.red.shade600},
-    {'month': 'Month 5', 'risk': 'Medium High', 'color': Colors.red.shade700},
-    {'month': 'Month 6', 'risk': 'High', 'color': Colors.red.shade800},
-    {'month': 'Month 7', 'risk': 'Very high', 'color': Colors.red.shade900},
-    {'month': 'Month 8', 'risk': 'Severe', 'color': Colors.red.shade900},
-    {'month': 'Month 9', 'risk': 'High severe', 'color': Colors.red.shade900},
-    {'month': 'Month 10', 'risk': 'High severe', 'color': Colors.red.shade900},
-    {'month': 'Month 11', 'risk': 'High severe', 'color': Colors.red.shade900},
-    {'month': 'Month 12', 'risk': 'High severe', 'color': Colors.red.shade900},
+    {'month': 'Month 1', 'risk': 'Low'},
+    {'month': 'Month 2', 'risk': 'Low-medium'},
+    {'month': 'Month 3', 'risk': 'Medium'},
+    {'month': 'Month 4', 'risk': 'Low high'},
+    {'month': 'Month 5', 'risk': 'Medium High'},
+    {'month': 'Month 6', 'risk': 'High'},
+    {'month': 'Month 7', 'risk': 'Very high'},
+    {'month': 'Month 8', 'risk': 'Severe'},
+    {'month': 'Month 9', 'risk': 'High severe'},
+    {'month': 'Month 10', 'risk': 'High severe'},
+    {'month': 'Month 11', 'risk': 'High severe'},
+    {'month': 'Month 12', 'risk': 'High severe'},
   ];
 
   @override
@@ -39,10 +39,17 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.chevron_left, size: 32),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Personal Health Statistics'),
+        title: const Text(
+          'Personal Health Statistics',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
         titleSpacing: 0,
         centerTitle: false,
       ),
@@ -53,17 +60,18 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           children: [
             Expanded(
               child: GridView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: const EdgeInsets.all(12),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
-                  crossAxisSpacing: 12,
+                  crossAxisSpacing: 8,
                   mainAxisSpacing: 12,
-                  childAspectRatio: 0.72,
+                  // Square image + two caption lines underneath
+                  childAspectRatio: 0.78,
                 ),
                 itemCount: monthlyData.length,
                 itemBuilder: (context, index) {
                   final data = monthlyData[index];
-                  return _MonthCard(
+                  return _GalleryTile(
                     month: data['month'] as String,
                     risk: data['risk'] as String,
                   );
@@ -101,77 +109,64 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 }
 
-class _MonthCard extends StatelessWidget {
+/// Standard gallery-style tile: square thumbnail + captions below.
+class _GalleryTile extends StatelessWidget {
   final String month;
   final String risk;
 
-  const _MonthCard({
+  const _GalleryTile({
     required this.month,
     required this.risk,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
-            child: Text(
-              month,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF2F6),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/sample_1.png',
+                fit: BoxFit.contain,
+                width: double.infinity,
+                height: double.infinity,
+                alignment: Alignment.center,
               ),
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.asset(
-                  'assets/images/sample_1.png',
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                ),
-              ),
-            ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          month,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 4, 6, 8),
-            child: Text(
-              risk,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: AppColors.textPrimary,
-              ),
-            ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          risk,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 11,
+            color: Color(0xFF6B7280),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

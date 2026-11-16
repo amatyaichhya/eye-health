@@ -1,32 +1,41 @@
 import 'package:flutter/material.dart';
 
 class EyeHealthAppbar extends StatelessWidget implements PreferredSizeWidget {
-  const EyeHealthAppbar({super.key});
+  const EyeHealthAppbar({
+    super.key,
+    this.title = 'Eye Health',
+    this.showBack = true,
+  });
 
-  static const String _appTitle = 'EYEHEALTH';
+  final String title;
+  final bool showBack;
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.canPop(context);
+
     return AppBar(
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ClipOval(
-            child: Image.asset(
-              'assets/icons/launcher_icon.png',
-              width: 36,
-              height: 36,
-              fit: BoxFit.cover,
-            ),
-          ),
-          const SizedBox(width: 10),
-          const Text(_appTitle),
-        ],
+      leading:
+          showBack && canPop
+              ? IconButton(
+                icon: const Icon(Icons.chevron_left, size: 32),
+                onPressed: () => Navigator.pop(context),
+              )
+              : null,
+      automaticallyImplyLeading: false,
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
       ),
-      toolbarHeight: 70,
+      titleSpacing: 0,
+      centerTitle: false,
     );
   }
 
   @override
-  Size get preferredSize => const Size.fromHeight(70);
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 }

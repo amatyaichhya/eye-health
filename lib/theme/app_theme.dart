@@ -28,8 +28,8 @@ class AppTheme {
         centerTitle: true,
         systemOverlayStyle: SystemUiOverlayStyle.light,
         titleTextStyle: TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.w800,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
         iconTheme: IconThemeData(color: Colors.white),

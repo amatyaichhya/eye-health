@@ -188,7 +188,7 @@ class _StaticImageProcessingScreenState
             : 32.0;
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: EyeHealthAppbar(),
+      appBar: const EyeHealthAppbar(title: 'Eye Health Assistant'),
       body: Column(
         children: [
           Expanded(
@@ -204,17 +204,10 @@ class _StaticImageProcessingScreenState
                       children: [
                         Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Colors.green[900],
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Icon(
-                                Icons.person,
-                                color: Colors.white,
-                                size: 30,
-                              ),
+                            const Icon(
+                              Icons.image_outlined,
+                              color: Color(0xFF4A9AD4),
+                              size: 22,
                             ),
                             const SizedBox(width: 8),
 
@@ -356,19 +349,12 @@ class _StaticImageProcessingScreenState
                         mainAxisAlignment: MainAxisAlignment.start,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.green[900],
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: ClipOval(
-                              child: Image.asset(
-                                'assets/icons/launcher_icon.png',
-                                width: 20,
-                                height: 20,
-                                fit: BoxFit.cover,
-                              ),
+                          ClipOval(
+                            child: Image.asset(
+                              'assets/icons/launcher_icon.png',
+                              width: 28,
+                              height: 28,
+                              fit: BoxFit.cover,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -454,19 +440,12 @@ class _StaticImageProcessingScreenState
                                   mainAxisAlignment: MainAxisAlignment.start,
                                   children: [
                                     // if(index != 0)
-                                    Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green[900],
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: ClipOval(
-                                        child: Image.asset(
-                                          'assets/icons/launcher_icon.png',
-                                          width: 30,
-                                          height: 30,
-                                          fit: BoxFit.cover,
-                                        ),
+                                    ClipOval(
+                                      child: Image.asset(
+                                        'assets/icons/launcher_icon.png',
+                                        width: 30,
+                                        height: 30,
+                                        fit: BoxFit.cover,
                                       ),
                                     ),
                                   ],
