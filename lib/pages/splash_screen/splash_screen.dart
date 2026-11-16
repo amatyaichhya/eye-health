@@ -1,5 +1,7 @@
 import 'package:eye_health/pages/home_screen/home_screen.dart';
+import 'package:eye_health/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -9,51 +11,39 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  static const Duration _splashDuration = Duration(seconds: 3);
+  /// Keep short — native splash already showed the same frame.
+  static const Duration _holdDuration = Duration(milliseconds: 900);
   static const String _iconPath = 'assets/icons/launcher_icon.png';
-  static const double _iconSize = 200.0;
-  static const String _welcomeTitle = 'Welcome to Eye Health';
-  static const String _welcomeSubtitle =
-      'Your journey to better eye health starts here.';
 
   @override
   void initState() {
     super.initState();
+    // Hand off from native splash to this matching Flutter screen.
+    FlutterNativeSplash.remove();
     _navigateToHome();
   }
 
   void _navigateToHome() {
-    Future.delayed(_splashDuration, () {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-        );
-      }
+    Future.delayed(_holdDuration, () {
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    // Matches native splash: solid primary + centered logo only.
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.primary,
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(_iconPath, width: _iconSize, height: _iconSize),
-            const SizedBox(height: 20),
-            const Text(
-              _welcomeTitle,
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              _welcomeSubtitle,
-              style: TextStyle(fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
-          ],
+        child: Image.asset(
+          _iconPath,
+          width: 160,
+          height: 160,
+          fit: BoxFit.contain,
         ),
       ),
     );
