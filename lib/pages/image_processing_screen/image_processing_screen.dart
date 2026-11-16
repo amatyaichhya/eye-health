@@ -9,8 +9,13 @@ import 'package:flutter/material.dart';
 /// Supports both image analysis and interactive chat consultation
 class PhotoProcessingScreen extends StatefulWidget {
   final List<XFile>? photos;
+  final bool showBackButton;
 
-  const PhotoProcessingScreen({super.key, required this.photos});
+  const PhotoProcessingScreen({
+    super.key,
+    required this.photos,
+    this.showBackButton = true,
+  });
 
   @override
   State<PhotoProcessingScreen> createState() => _PhotoProcessingScreenState();
@@ -341,10 +346,14 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.chevron_left, size: 32),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading:
+            widget.showBackButton
+                ? IconButton(
+                  icon: const Icon(Icons.chevron_left, size: 32),
+                  onPressed: () => Navigator.pop(context),
+                )
+                : null,
+        automaticallyImplyLeading: false,
         title: const Text(
           'Eye Health Assistant',
           style: TextStyle(
@@ -353,7 +362,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
             color: Colors.white,
           ),
         ),
-        titleSpacing: 0,
+        titleSpacing: widget.showBackButton ? 0 : 16,
         centerTitle: false,
       ),
       body: SafeArea(
@@ -687,8 +696,10 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
 
   /// Build message input section
   Widget _buildMessageInput() {
+    final isTab = !widget.showBackButton;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, isTab ? 8 : 12),
       decoration: const BoxDecoration(
         color: AppColors.surface,
         boxShadow: [
@@ -701,12 +712,17 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            Expanded(child: _buildTextInput()),
-            const SizedBox(width: 12),
-            _buildSendButton(),
-          ],
+        // Tab mode: bottom nav handles SafeArea; leave room above the bar.
+        bottom: !isTab,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: isTab ? 72 : 0),
+          child: Row(
+            children: [
+              Expanded(child: _buildTextInput()),
+              const SizedBox(width: 12),
+              _buildSendButton(),
+            ],
+          ),
         ),
       ),
     );

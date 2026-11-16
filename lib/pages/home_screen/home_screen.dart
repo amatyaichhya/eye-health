@@ -102,8 +102,9 @@ class _HomeScreenState extends State<HomeScreen> {
         toolbarHeight: 70,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
         child: GridView.builder(
+          padding: const EdgeInsets.only(bottom: 88),
           itemCount: items.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
@@ -156,23 +157,23 @@ class _MenuCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 12,
+            color: Color(0x1A000000),
+            blurRadius: 8,
             spreadRadius: 0,
-            offset: Offset(0, 4),
+            offset: Offset(0, 2),
           ),
         ],
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Column(
@@ -183,7 +184,7 @@ class _MenuCard extends StatelessWidget {
                   height: 56,
                   decoration: BoxDecoration(
                     color: AppColors.primarySoft,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(icon, size: 32, color: AppColors.primaryDark),
                 ),

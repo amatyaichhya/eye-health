@@ -1,8 +1,11 @@
-import 'package:eye_health/pages/home_screen/home_screen.dart';
+import 'package:eye_health/pages/main_shell/main_shell.dart';
 import 'package:eye_health/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
+/// Single branded splash: circular logo on theme blue.
+/// Native splash is color-only and is removed after this screen paints,
+/// so you effectively see one splash.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -11,15 +14,16 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  /// Keep short — native splash already showed the same frame.
-  static const Duration _holdDuration = Duration(milliseconds: 900);
+  static const Duration _holdDuration = Duration(milliseconds: 1400);
   static const String _iconPath = 'assets/icons/launcher_icon.png';
 
   @override
   void initState() {
     super.initState();
-    // Hand off from native splash to this matching Flutter screen.
-    FlutterNativeSplash.remove();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Drop the color-only native splash once this circular logo is on screen.
+      FlutterNativeSplash.remove();
+    });
     _navigateToHome();
   }
 
@@ -28,22 +32,23 @@ class _SplashScreenState extends State<SplashScreen> {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        MaterialPageRoute(builder: (context) => const MainShell()),
       );
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Matches native splash: solid primary + centered logo only.
     return Scaffold(
       backgroundColor: AppColors.primary,
       body: Center(
-        child: Image.asset(
-          _iconPath,
-          width: 160,
-          height: 160,
-          fit: BoxFit.contain,
+        child: ClipOval(
+          child: Image.asset(
+            _iconPath,
+            width: 160,
+            height: 160,
+            fit: BoxFit.cover,
+          ),
         ),
       ),
     );

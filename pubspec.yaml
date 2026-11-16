@@ -35,14 +35,14 @@ flutter_launcher_icons:
   adaptive_icon_background: "#ffffff"
   remove_alpha_ios: true
 
+# Color-only native splash (no icon). Branded circular logo is shown
+# only by the Flutter SplashScreen so Android/iOS can't distort it.
 flutter_native_splash:
   color: "#6BB3E0"
-  image: assets/icons/launcher_icon.png
   android: true
   ios: true
   android_12:
     color: "#6BB3E0"
-    image: assets/icons/launcher_icon.png
   web: false
 
 flutter:
