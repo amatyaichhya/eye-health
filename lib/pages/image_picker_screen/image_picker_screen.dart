@@ -428,7 +428,7 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.green,
+        backgroundColor: AppColors.primary,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -639,7 +639,7 @@ class _TopOverlay extends StatelessWidget {
                       decoration: BoxDecoration(
                         color:
                             showPhotoManagement
-                                ? Colors.green
+                                ? AppColors.primary
                                 : Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -766,28 +766,28 @@ class _CenterGuidanceOverlay extends StatelessWidget {
                                   top:
                                       index < 2
                                           ? const BorderSide(
-                                            color: Colors.green,
+                                            color: AppColors.primary,
                                             width: 3,
                                           )
                                           : BorderSide.none,
                                   bottom:
                                       index >= 2
                                           ? const BorderSide(
-                                            color: Colors.green,
+                                            color: AppColors.primary,
                                             width: 3,
                                           )
                                           : BorderSide.none,
                                   left:
                                       index % 2 == 0
                                           ? const BorderSide(
-                                            color: Colors.green,
+                                            color: AppColors.primary,
                                             width: 3,
                                           )
                                           : BorderSide.none,
                                   right:
                                       index % 2 == 1
                                           ? const BorderSide(
-                                            color: Colors.green,
+                                            color: AppColors.primary,
                                             width: 3,
                                           )
                                           : BorderSide.none,
@@ -970,7 +970,7 @@ class _BottomOverlay extends StatelessWidget {
               child: ElevatedButton(
                 onPressed: canDone ? onDoneTap : null,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: canDone ? Colors.green : Colors.grey,
+                  backgroundColor: canDone ? AppColors.primary : Colors.grey,
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1047,7 +1047,7 @@ class _SelectedPhotosStrip extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.green,
+                    color: AppColors.primary,
                     borderRadius: BorderRadius.circular(15),
                   ),
                   child: const Text(
@@ -1105,7 +1105,7 @@ class _SelectedPhotoItem extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.green, width: 2),
+              border: Border.all(color: AppColors.primary, width: 2),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.3),
@@ -1132,7 +1132,7 @@ class _SelectedPhotoItem extends StatelessWidget {
               width: 20,
               height: 20,
               decoration: BoxDecoration(
-                color: Colors.green,
+                color: AppColors.primary,
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 1),
               ),
@@ -1335,7 +1335,7 @@ class _MultiPhotoPreviewScreenState extends State<_MultiPhotoPreviewScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Photo ${removedIndex + 1} removed'),
-          backgroundColor: Colors.orange,
+          backgroundColor: AppColors.primaryDark,
           duration: const Duration(seconds: 2),
         ),
       );
@@ -1423,7 +1423,7 @@ class _MultiPhotoPreviewScreenState extends State<_MultiPhotoPreviewScreen> {
                       shape: BoxShape.circle,
                       color:
                           index == _currentIndex
-                              ? Colors.green
+                              ? AppColors.primary
                               : Colors.white54,
                     ),
                   );
@@ -1456,7 +1456,7 @@ class _MultiPhotoPreviewScreenState extends State<_MultiPhotoPreviewScreen> {
                   child: ElevatedButton(
                     onPressed: widget.onDone,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 15),
                     ),
                     child: Text(

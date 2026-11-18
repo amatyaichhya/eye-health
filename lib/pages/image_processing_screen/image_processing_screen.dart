@@ -456,9 +456,11 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   /// Build multiple photos display
   Widget _buildMultiplePhotosDisplay() {
     return SizedBox(
-      height: 120,
+      height: 124,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(top: 6, right: 6),
+        clipBehavior: Clip.none,
         itemCount: widget.photos?.length ?? 0,
         itemBuilder: (context, index) => _buildPhotoItem(index),
       ),
@@ -483,51 +485,63 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
 
   /// Build photo thumbnail
   Widget _buildPhotoThumbnail(int index) {
-    return Container(
+    return SizedBox(
       width: _multiplePhotoSize,
       height: _multiplePhotoSize,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: Colors.teal, width: 2),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(38),
-        child: Stack(
-          children: [
-            Image.file(
-              File(widget.photos![index].path),
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: _multiplePhotoSize,
+            height: _multiplePhotoSize,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(40),
+              border: Border.all(color: AppColors.primary, width: 2),
             ),
-            _buildPhotoNumberOverlay(index),
-          ],
-        ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(38),
+              child: Image.file(
+                File(widget.photos![index].path),
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+              ),
+            ),
+          ),
+          _buildPhotoNumberBadge(index),
+        ],
       ),
     );
   }
 
-  /// Build photo number overlay
-  Widget _buildPhotoNumberOverlay(int index) {
+  /// Floating notification-style number badge
+  Widget _buildPhotoNumberBadge(int index) {
     return Positioned(
-      top: 4,
-      right: 4,
+      top: 2,
+      right: -4,
       child: Container(
-        width: 20,
-        height: 20,
+        width: 22,
+        height: 22,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: Colors.teal,
+          color: AppColors.primary,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 1),
-        ),
-        child: Center(
-          child: Text(
-            '${index + 1}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
+          border: Border.all(color: Colors.white, width: 1.5),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 4,
+              offset: Offset(0, 1),
             ),
+          ],
+        ),
+        child: Text(
+          '${index + 1}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            height: 1,
           ),
         ),
       ),
@@ -875,7 +889,7 @@ class _ChatBubbleState extends State<ChatBubble> {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: widget.message.isUser ? Colors.teal : Colors.grey.shade200,
+          color: widget.message.isUser ? AppColors.primary : Colors.grey.shade200,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
