@@ -2,7 +2,8 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:eye_health/pages/image_processing_screen/image_processing_screen.dart';
-import 'package:eye_health/pages/image_processing_screen/static_image_processing_screen.dart';
+import 'package:eye_health/theme/app_theme.dart';
+import 'package:eye_health/utils/utility_methods/app_toast.dart';
 import 'package:eye_health/utils/utility_methods/color_print.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,7 +11,17 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class ImagePickerScreen extends StatefulWidget {
-  const ImagePickerScreen({super.key});
+  /// When true, opens the system gallery immediately (upload flow).
+  final bool openGalleryOnStart;
+
+  /// Max fundus images the user can select / capture.
+  final int maxPhotos;
+
+  const ImagePickerScreen({
+    super.key,
+    this.openGalleryOnStart = false,
+    this.maxPhotos = 5,
+  });
 
   @override
   State<ImagePickerScreen> createState() => _ImagePickerScreenState();
@@ -18,10 +29,11 @@ class ImagePickerScreen extends StatefulWidget {
 
 class _ImagePickerScreenState extends State<ImagePickerScreen> {
   static const String _screenTitle = 'Capture Fundus Photos';
-  static const int _maxPhotos = 1; // Maximum photos allowed
   static const Duration _debounceDelay = Duration(
     milliseconds: 500,
   ); // Debounce delay
+
+  int get _maxPhotos => widget.maxPhotos;
 
   CameraController? _cameraController;
   List<CameraDescription> _cameras = [];
@@ -51,6 +63,12 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _initializeCamera();
     _loadRecentImages();
+
+    if (widget.openGalleryOnStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _pickFromGallery(fromUploadEntry: true);
+      });
+    }
   }
 
   bool _canPressButton() {
@@ -182,13 +200,16 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
       if (_isCapturing) {
         _showMessage('Please wait, capturing photo...');
       } else {
-        _showMessage('Camera not ready');
+        _showMessage('Camera not ready', type: AppToastType.error);
       }
       return;
     }
 
     if (_selectedPhotos.length >= _maxPhotos) {
-      _showMessage('Maximum $_maxPhotos photos allowed');
+      _showMessage(
+        'Maximum $_maxPhotos photos allowed',
+        type: AppToastType.error,
+      );
       return;
     }
 
@@ -209,7 +230,10 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
             _showPhotoManagement = true;
           }
         });
-        _showMessage('Photo ${_selectedPhotos.length} captured!');
+        _showMessage(
+          'Photo ${_selectedPhotos.length} captured!',
+          type: AppToastType.success,
+        );
 
         // Add haptic feedback
         HapticFeedback.lightImpact();
@@ -226,11 +250,11 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
           _isCapturing = false;
         });
       }
-      _showMessage('Failed to capture photo');
+      _showMessage('Failed to capture photo', type: AppToastType.error);
     }
   }
 
-  Future<void> _pickFromGallery() async {
+  Future<void> _pickFromGallery({bool fromUploadEntry = false}) async {
     if (!_canPressButton() || _isPickingFromGallery) {
       if (_isPickingFromGallery) {
         _showMessage('Please wait, opening gallery...');
@@ -246,28 +270,17 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
       final int remainingSlots = _maxPhotos - _selectedPhotos.length;
 
       if (remainingSlots <= 0) {
-        _showMessage('Maximum $_maxPhotos photos already selected');
+        _showMessage(
+          'Maximum $_maxPhotos photos already selected',
+          type: AppToastType.error,
+        );
         return;
       }
 
-      List<XFile> images = [];
-
-      if (remainingSlots == 1) {
-        // Use single image picker when only 1 slot remains
-        final XFile? image = await _imagePicker.pickImage(
-          source: ImageSource.gallery,
-          imageQuality: 80,
-        );
-        if (image != null) {
-          images = [image];
-        }
-      } else {
-        // Use multi-image picker when 2 or more slots remain
-        images = await _imagePicker.pickMultiImage(
-          imageQuality: 80,
-          limit: remainingSlots,
-        );
-      }
+      final List<XFile> images = await _imagePicker.pickMultiImage(
+        imageQuality: 80,
+        limit: remainingSlots,
+      );
 
       if (images.isNotEmpty) {
         colorPrint('${images.length} images selected from gallery');
@@ -276,14 +289,26 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
           if (_selectedPhotos.length > _maxPhotos) {
             _selectedPhotos = _selectedPhotos.take(_maxPhotos).toList();
           }
-          // Show photo management when photos are added
           _showPhotoManagement = true;
         });
-        _showMessage('${images.length} photos added!');
+        final added =
+            images.length > remainingSlots ? remainingSlots : images.length;
+        _showMessage(
+          '$added photo${added == 1 ? '' : 's'} added (max $_maxPhotos)',
+          type: AppToastType.success,
+        );
+      } else if (fromUploadEntry && mounted && _selectedPhotos.isEmpty) {
+        Navigator.pop(context);
       }
     } catch (e) {
       colorPrint('Error picking from gallery: $e');
-      _showMessage('Failed to pick images from gallery');
+      _showMessage(
+        'Failed to pick images from gallery',
+        type: AppToastType.error,
+      );
+      if (fromUploadEntry && mounted && _selectedPhotos.isEmpty) {
+        Navigator.pop(context);
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -303,7 +328,7 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
         _showPhotoManagement = false;
       }
     });
-    _showMessage('Photo removed');
+    _showMessage('Photo removed', type: AppToastType.success);
     HapticFeedback.selectionClick();
   }
 
@@ -311,7 +336,7 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
     if (!_canPressButton()) return;
 
     if (_selectedPhotos.isEmpty) {
-      _showMessage('No photos to preview');
+      _showMessage('No photos to preview', type: AppToastType.error);
       return;
     }
 
@@ -341,7 +366,7 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
     }
 
     if (_selectedPhotos.isEmpty) {
-      _showMessage('No photos to process');
+      _showMessage('No photos to process', type: AppToastType.error);
       return;
     }
 
@@ -404,7 +429,7 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
               child: const Text(
                 'Clear All',
                 style: TextStyle(
-                  color: Colors.red,
+                  color: Colors.white,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -420,18 +445,15 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
       _selectedPhotos.clear();
       _showPhotoManagement = false; // Hide management when no photos
     });
-    _showMessage('All photos cleared');
+    _showMessage('All photos cleared', type: AppToastType.success);
     HapticFeedback.mediumImpact();
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  void _showMessage(
+    String message, {
+    AppToastType type = AppToastType.info,
+  }) {
+    showAppToast(context, message, type: type);
   }
 
   void _exitFullScreen() {
@@ -639,7 +661,7 @@ class _TopOverlay extends StatelessWidget {
                       decoration: BoxDecoration(
                         color:
                             showPhotoManagement
-                                ? Colors.green
+                                ? AppColors.primary
                                 : Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -691,22 +713,12 @@ class _TopOverlay extends StatelessWidget {
           if (onClearPressed != null)
             GestureDetector(
               onTap: onClearPressed,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: const Text(
-                  'Clear',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 28,
                 ),
               ),
             ),
@@ -766,28 +778,28 @@ class _CenterGuidanceOverlay extends StatelessWidget {
                                   top:
                                       index < 2
                                           ? const BorderSide(
-                                            color: Colors.green,
+                                            color: Color(0xFF6BB3E0),
                                             width: 3,
                                           )
                                           : BorderSide.none,
                                   bottom:
                                       index >= 2
                                           ? const BorderSide(
-                                            color: Colors.green,
+                                            color: Color(0xFF6BB3E0),
                                             width: 3,
                                           )
                                           : BorderSide.none,
                                   left:
                                       index % 2 == 0
                                           ? const BorderSide(
-                                            color: Colors.green,
+                                            color: Color(0xFF6BB3E0),
                                             width: 3,
                                           )
                                           : BorderSide.none,
                                   right:
                                       index % 2 == 1
                                           ? const BorderSide(
-                                            color: Colors.green,
+                                            color: Color(0xFF6BB3E0),
                                             width: 3,
                                           )
                                           : BorderSide.none,
@@ -970,7 +982,7 @@ class _BottomOverlay extends StatelessWidget {
               child: ElevatedButton(
                 onPressed: canDone ? onDoneTap : null,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: canDone ? Colors.green : Colors.grey,
+                  backgroundColor: canDone ? AppColors.primary : Colors.grey,
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1047,7 +1059,7 @@ class _SelectedPhotosStrip extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.green,
+                    color: AppColors.primary,
                     borderRadius: BorderRadius.circular(15),
                   ),
                   child: const Text(
@@ -1105,7 +1117,7 @@ class _SelectedPhotoItem extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.green, width: 2),
+              border: Border.all(color: AppColors.primary, width: 2),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.3),
@@ -1132,7 +1144,7 @@ class _SelectedPhotoItem extends StatelessWidget {
               width: 20,
               height: 20,
               decoration: BoxDecoration(
-                color: Colors.green,
+                color: AppColors.primary,
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 1),
               ),
@@ -1148,21 +1160,20 @@ class _SelectedPhotoItem extends StatelessWidget {
               ),
             ),
           ),
-          // Remove button
           Positioned(
             top: 4,
             right: 4,
             child: GestureDetector(
               onTap: onRemove,
-              child: Container(
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox(
                 width: 20,
                 height: 20,
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1),
+                child: Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 20,
                 ),
-                child: const Icon(Icons.close, color: Colors.white, size: 12),
               ),
             ),
           ),
@@ -1332,12 +1343,10 @@ class _MultiPhotoPreviewScreenState extends State<_MultiPhotoPreviewScreen> {
       widget.onPhotosUpdated(_photos);
 
       // Show feedback
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Photo ${removedIndex + 1} removed'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 2),
-        ),
+      showAppToast(
+        context,
+        'Photo ${removedIndex + 1} removed',
+        type: AppToastType.success,
       );
 
       if (_photos.isEmpty) {
@@ -1423,7 +1432,7 @@ class _MultiPhotoPreviewScreenState extends State<_MultiPhotoPreviewScreen> {
                       shape: BoxShape.circle,
                       color:
                           index == _currentIndex
-                              ? Colors.green
+                              ? AppColors.primary
                               : Colors.white54,
                     ),
                   );
@@ -1456,7 +1465,7 @@ class _MultiPhotoPreviewScreenState extends State<_MultiPhotoPreviewScreen> {
                   child: ElevatedButton(
                     onPressed: widget.onDone,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 15),
                     ),
                     child: Text(

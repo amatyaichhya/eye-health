@@ -21,12 +21,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _MenuItem(
         icon: Icons.camera_alt,
         text: 'Take a Fundus Photo',
-        onTap: () => _navigateToImagePicker('Take a Fundus Photo'),
+        onTap: () => _navigateToImagePicker(
+          'Take a Fundus Photo',
+          openGalleryOnStart: false,
+        ),
       ),
       _MenuItem(
         icon: Icons.upload,
         text: 'Upload a Fundus Photo',
-        onTap: () => _navigateToImagePicker('Upload a Fundus Photo'),
+        onTap: () => _navigateToImagePicker(
+          'Upload a Fundus Photo',
+          openGalleryOnStart: true,
+        ),
       ),
       _MenuItem(
         icon: Icons.bar_chart,
@@ -51,13 +57,22 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
   }
 
-  void _navigateToImagePicker(String buttonName) {
+  void _navigateToImagePicker(
+    String buttonName, {
+    required bool openGalleryOnStart,
+  }) {
     if (kDebugMode) {
       colorPrint('$buttonName button pressed - Navigating to Image Picker');
     }
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const ImagePickerScreen()),
+      MaterialPageRoute(
+        builder:
+            (context) => ImagePickerScreen(
+              openGalleryOnStart: openGalleryOnStart,
+              maxPhotos: 5,
+            ),
+      ),
     );
   }
 

@@ -1,5 +1,6 @@
 import 'package:eye_health/pages/statistics_screen/ai_statistics_screen.dart';
 import 'package:eye_health/theme/app_theme.dart';
+import 'package:eye_health/utils/utility_methods/app_toast.dart';
 import 'package:flutter/material.dart';
 
 class StatisticsScreen extends StatefulWidget {
@@ -99,11 +100,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to start AI chat: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
+      showAppToast(
+        context,
+        'Unable to start AI chat: ${e.toString()}',
+        type: AppToastType.error,
       );
     }
   }

@@ -17,9 +17,9 @@ Future<void> main() async {
 }
 
 void _configureToasts() {
-  defaultToastBackgroundColor = Colors.black;
+  defaultToastBackgroundColor = AppColors.primary;
   defaultToastTextColor = Colors.white;
-  defaultToastGravityGlobal = ToastGravity.CENTER;
+  defaultToastGravityGlobal = ToastGravity.TOP;
 }
 
 class MyApp extends StatelessWidget {
