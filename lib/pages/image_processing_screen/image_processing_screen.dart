@@ -1,16 +1,21 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
-import 'package:eye_health/global_widget/eye_health_appbar.dart';
 import 'package:eye_health/services/hf_service.dart';
+import 'package:eye_health/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
 /// Screen for processing fundus photos and providing AI-powered eye health analysis
 /// Supports both image analysis and interactive chat consultation
 class PhotoProcessingScreen extends StatefulWidget {
   final List<XFile>? photos;
+  final bool showBackButton;
 
-  const PhotoProcessingScreen({super.key, required this.photos});
+  const PhotoProcessingScreen({
+    super.key,
+    required this.photos,
+    this.showBackButton = true,
+  });
 
   @override
   State<PhotoProcessingScreen> createState() => _PhotoProcessingScreenState();
@@ -339,29 +344,52 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     final fontSize = _getResponsiveFontSize(screenWidth);
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: EyeHealthAppbar(),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_hasPhotos) ...[
-                    _buildPhotoSection(),
-                    const SizedBox(height: 24),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        leading:
+            widget.showBackButton
+                ? IconButton(
+                  icon: const Icon(Icons.chevron_left, size: 32),
+                  onPressed: () => Navigator.pop(context),
+                )
+                : null,
+        automaticallyImplyLeading: false,
+        title: const Text(
+          'Eye Health Assistant',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        titleSpacing: widget.showBackButton ? 0 : 16,
+        centerTitle: false,
+      ),
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_hasPhotos) ...[
+                      _buildPhotoSection(),
+                      const SizedBox(height: 24),
+                    ],
+                    if (_isProcessing) _buildLoadingIndicator(),
+                    if (_messages.isNotEmpty) _buildChatMessages(fontSize),
                   ],
-                  if (_isProcessing) _buildLoadingIndicator(),
-                  if (_messages.isNotEmpty) _buildChatMessages(fontSize),
-                ],
+                ),
               ),
             ),
-          ),
-          _buildMessageInput(),
-        ],
+            _buildMessageInput(),
+          ],
+        ),
       ),
     );
   }
@@ -380,24 +408,17 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
 
   /// Build photo section header
   Widget _buildPhotoHeader() {
-    return Row(
+    return const Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Colors.green[900],
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: const Icon(
-            Icons.person,
-            color: Colors.white,
-            size: _avatarSize,
-          ),
-        ),
-        const SizedBox(width: 8),
-        const Text(
+        Icon(Icons.image_outlined, color: AppColors.primaryDark, size: 22),
+        SizedBox(width: 8),
+        Text(
           _fundusPhotoTakenText,
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textPrimary,
+          ),
         ),
       ],
     );
@@ -530,7 +551,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     return const Center(
       child: Padding(
         padding: EdgeInsets.all(32),
-        child: CircularProgressIndicator(color: Colors.teal),
+        child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
   }
@@ -594,7 +615,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
             width: 16,
             height: 16,
             child: CircularProgressIndicator(
-              color: Colors.teal,
+              color: AppColors.primary,
               strokeWidth: 2,
             ),
           ),
@@ -632,10 +653,18 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   /// Build AI avatar
   Widget _buildAIAvatar() {
     return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.green[900],
-        borderRadius: BorderRadius.circular(6),
+      width: _avatarSize,
+      height: _avatarSize,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 6,
+            spreadRadius: 0.5,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: ClipOval(
         child: Image.asset(
@@ -651,37 +680,49 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   /// Build user avatar
   Widget _buildUserAvatar() {
     return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.blue,
-        borderRadius: BorderRadius.circular(6),
+      width: _avatarSize + 4,
+      height: _avatarSize + 4,
+      decoration: const BoxDecoration(
+        color: AppColors.primarySoft,
+        shape: BoxShape.circle,
       ),
-      child: const Icon(Icons.person, color: Colors.white, size: 24),
+      child: const Icon(
+        Icons.person,
+        color: AppColors.primaryDark,
+        size: 20,
+      ),
     );
   }
 
   /// Build message input section
   Widget _buildMessageInput() {
+    final isTab = !widget.showBackButton;
+
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, isTab ? 8 : 12),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
+            color: Color(0x22000000),
+            blurRadius: 12,
+            offset: Offset(0, -3),
           ),
         ],
       ),
       child: SafeArea(
-        child: Row(
-          children: [
-            Expanded(child: _buildTextInput()),
-            const SizedBox(width: 12),
-            _buildSendButton(),
-          ],
+        top: false,
+        // Tab mode: bottom nav handles SafeArea; leave room above the bar.
+        bottom: !isTab,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: isTab ? 72 : 0),
+          child: Row(
+            children: [
+              Expanded(child: _buildTextInput()),
+              const SizedBox(width: 12),
+              _buildSendButton(),
+            ],
+          ),
         ),
       ),
     );
@@ -722,7 +763,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: isDisabled ? Colors.grey : Colors.teal,
+        color: isDisabled ? Colors.grey : AppColors.primary,
         shape: BoxShape.circle,
       ),
       child:

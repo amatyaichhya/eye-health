@@ -1,13 +1,16 @@
 import 'package:eye_health/pages/splash_screen/splash_screen.dart';
+import 'package:eye_health/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:nb_utils/nb_utils.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  // Keep native splash up until Flutter SplashScreen removes it.
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   await initialize();
   _configureToasts();
-  // await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   runApp(const MyApp());
@@ -29,23 +32,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: appTitle,
       debugShowCheckedModeBanner: false,
-      theme: _buildTheme(),
+      theme: AppTheme.light(),
       home: const SplashScreen(),
-    );
-  }
-
-  ThemeData _buildTheme() {
-    return ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-      appBarTheme: AppBarTheme(
-        backgroundColor: Colors.green[900],
-        foregroundColor: Colors.white,
-        titleTextStyle: const TextStyle(
-          fontSize: 36,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-        ),
-      ),
     );
   }
 }

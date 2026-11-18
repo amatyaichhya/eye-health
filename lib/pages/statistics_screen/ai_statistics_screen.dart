@@ -20,7 +20,7 @@ class _AiStatisticsScreenState extends State<AiStatisticsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      appBar: EyeHealthAppbar(),
+      appBar: const EyeHealthAppbar(title: 'Personal Health Statistics'),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0),
