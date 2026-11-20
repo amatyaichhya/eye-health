@@ -13,6 +13,9 @@ config.prod.json
 config.staging.json
 # Keep template files: config.*.template.json
 
+# Local Python screening API (not part of the Flutter app)
+screening_server/
+
 # Flutter repo-specific
 /bin/cache/
 /bin/internal/bootstrap.bat

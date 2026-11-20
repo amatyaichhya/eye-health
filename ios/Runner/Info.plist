@@ -30,6 +30,11 @@
 		<string>This app needs access to camera to capture photos of fungal infections for health analysis.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>This app needs access to photo library to select images of fungal infections for health analysis.</string>
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSAllowsLocalNetworking</key>
+			<true/>
+		</dict>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 			<key>UIApplicationSupportsMultipleScenes</key>

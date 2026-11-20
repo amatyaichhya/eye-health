@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:eye_health/services/hf_service.dart';
+import 'package:eye_health/services/screening_service.dart';
 import 'package:eye_health/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
@@ -48,8 +49,9 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       "Feel free to ask me any questions about these results or about general eye health!";
   static const String _initialGreeting =
       'Hello! I\'m your AI Eye Health Assistant. I can help you with questions about eye health, diabetic retinopathy, preventive care, and general eye wellness. How can I assist you today?';
-  static const String _apiNotConfiguredError =
-      'HuggingFace API key not configured. Please add your API key to lib/config/open_api_config.dart';
+  static const String _screeningServerError =
+      'Screening is unavailable right now.\n\n'
+      'Please make sure the local screening server is running, then try again.';
   static const String _analysisFailedPrefix = 'Analysis failed: ';
   static const String _aiThinkingText = 'AI is thinking';
   static const String _fundusPhotoTakenText = 'Fundus photo taken:';
@@ -128,20 +130,27 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     }
   }
 
-  /// Start photo processing workflow
+  /// Start photo processing workflow (local screening models)
   Future<void> _startProcessing() async {
     if (!_hasPhotos) return;
 
     _setProcessingState(true);
 
     try {
-      if (!HfService.isConfigured()) {
-        _handleProcessingError(_apiNotConfiguredError);
+      if (!ScreeningService.isConfigured()) {
+        _handleProcessingError(_screeningServerError);
         return;
       }
 
-      final result = await HfService.analyzeFungalInfection(widget.photos!);
-      _handleProcessingSuccess(result);
+      final result = await ScreeningService.screenImages(widget.photos!);
+      if (result['success'] == true) {
+        _handleProcessingSuccess(result);
+      } else {
+        final error =
+            result['error']?.toString() ??
+            'Something went wrong while screening this image.';
+        _handleProcessingError(error);
+      }
     } catch (e) {
       _handleProcessingError('$_analysisFailedPrefix${e.toString()}');
     }
@@ -200,6 +209,14 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   String _buildAnalysisMessage() {
     if (!_isAnalysisSuccessful) return '';
 
+    // Local screening API response
+    if (_analysisResult!['source'] == 'local_screening' ||
+        _analysisResult!.containsKey('diabetic_retinopathy') ||
+        _analysisResult!.containsKey('results')) {
+      return ScreeningService.formatResultMessage(_analysisResult!);
+    }
+
+    // Legacy HF-shaped response (if still present)
     final analysis = _getAnalysisData();
     final buffer = StringBuffer();
 
@@ -219,10 +236,17 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     return buffer.toString();
   }
 
-  /// Get analysis data from result
+  /// Get analysis data from result (HF legacy shape)
   Map<String, dynamic> _getAnalysisData() {
     final outerData = _analysisResult!['analysis'];
-    return outerData['analysis'] ?? {};
+    if (outerData is Map) {
+      return Map<String, dynamic>.from(
+        outerData['analysis'] is Map
+            ? outerData['analysis'] as Map
+            : outerData,
+      );
+    }
+    return {};
   }
 
   /// Add a simple field to the analysis message
@@ -958,3 +982,29 @@ class _ChatBubbleState extends State<ChatBubble> {
     );
   }
 }
+
+// Example local screening API response (POST /screen):
+// {
+//   "success": true,
+//   "filename": "20170413112758639.jpg",
+//   "diabetic_retinopathy": {
+//     "grade": 1,
+//     "label": "Mild NPDR",
+//     "probabilities": {
+//       "0": 0.1878,
+//       "1": 0.2225,
+//       "2": 0.1925,
+//       "3": 0.1754,
+//       "4": 0.2218
+//     }
+//   },
+//   "glaucoma": {
+//     "positive": true,
+//     "class_index": 1,
+//     "label": "Suggestive of glaucoma",
+//     "probabilities": {
+//       "negative": 0.0,
+//       "positive": 1.0
+//     }
+//   }
+// }
