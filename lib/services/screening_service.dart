@@ -60,12 +60,18 @@ class ScreeningService {
     final results = <Map<String, dynamic>>[];
     for (final image in images) {
       final result = await screenImage(image);
-      results.add(result);
+      // Attach local path so the chat report can show the fundus image.
+      final withLocal = Map<String, dynamic>.from(result);
+      withLocal['local_path'] = image.path;
+      withLocal['filename'] =
+          result['filename']?.toString().isNotEmpty == true
+              ? result['filename']
+              : image.name;
+      results.add(withLocal);
       if (result['success'] != true) {
         return {
           'success': false,
           'error': result['error'] ?? 'Screening failed',
-          'hint': result['hint'],
           'results': results,
         };
       }
@@ -75,9 +81,24 @@ class ScreeningService {
       'success': true,
       'source': 'local_screening',
       'results': results,
-      // Keep first image as primary for chat context / display helpers
       'primary': results.first,
     };
+  }
+
+  /// Per-image payloads from a successful [screenImages] response.
+  static List<Map<String, dynamic>> extractResults(Map<String, dynamic> result) {
+    final raw = result['results'];
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    if (result.containsKey('diabetic_retinopathy') ||
+        result.containsKey('glaucoma')) {
+      return [result];
+    }
+    return [];
   }
 
   /// Human-readable chat message from a successful /screen payload.
