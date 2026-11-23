@@ -9,11 +9,22 @@ Many people with diabetes or elevated eye pressure do not get regular dilated ey
 **Eye Health** aims to make early screening more accessible by letting users:
 
 1. **Capture or upload** a fundus (retina) photo on a phone  
-2. Get **screening-oriented feedback** for diabetic retinopathy and glaucoma (on-device models planned; not wired in yet)  
+2. Get **screening-oriented feedback** for diabetic retinopathy and glaucoma via a local API  
 3. Ask follow-up questions through an **eye-health assistant**  
 4. Track simple **personal health statistics** over time  
 
 The app is for **education and screening support**. It is **not** a replacement for a clinical diagnosis or a full eye exam.
+
+---
+
+## Monorepo layout
+
+| Path | Project | Role |
+|---|---|---|
+| Repo root (`lib/`, `android/`, `ios/`, …) | **Flutter app** | Mobile UI; sends images over HTTP |
+| [`services/screening_server/`](services/screening_server/) | **Python FastAPI** | Loads `.pt` models and runs `/screen` |
+
+The screening server is a **separate project** in this repo — it is not bundled into the app. Run it locally, then point the app at it with `SCREENING_BASE_URL`.
 
 ---
 
@@ -47,7 +58,7 @@ This project’s glaucoma model is planned as a **binary screen** (e.g. suggesti
 - AI assistant chat via Hugging Face (config through `--dart-define-from-file`)
 - Personal health statistics screen (demo UI)
 
-## Planned screening models (not integrated yet)
+## Screening models
 
 Collaborators provided trained weights and DR test images:
 
@@ -56,7 +67,7 @@ Collaborators provided trained weights and DR test images:
 | `screening_models.zip` | **MobileViT-S** (DR, multi-class 0–4) and **MobileOne-S4** (glaucoma, binary) |
 | `test - Copy.zip` | Sample DR fundus images + a text file of true grades (labels) |
 
-These will be added to the app in a future update. Until then, analysis uses the existing cloud assistant path.
+Place the `.pt` files under `~/Downloads/screening_models/` (or set `SCREENING_MODEL_DIR`). The Flutter app does **not** load these files — only `services/screening_server` does.
 
 ---
 
@@ -65,11 +76,22 @@ These will be added to the app in a future update. Until then, analysis uses the
 ```bash
 flutter pub get
 
-# Copy template and add keys
+# Copy template and add keys (include SCREENING_BASE_URL)
 cp config.dev.template.json config.dev.json
 
 flutter run --dart-define-from-file=config.dev.json
 ```
+
+### Run the screening server (separate project)
+
+```bash
+cd services/screening_server
+python3.13 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Full details: [services/screening_server/README.md](services/screening_server/README.md).
 
 See [README_API_SETUP.md](README_API_SETUP.md) for API and build details.
 

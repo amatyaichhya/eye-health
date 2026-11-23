@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/services/screening_server/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/services/screening_server"
+  ]
+}
