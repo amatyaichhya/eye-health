@@ -4,7 +4,7 @@ import 'package:eye_health/theme/app_theme.dart';
 import 'package:eye_health/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
-/// Screening report: one card with fundus image (flex 1) + DR / glaucoma dropdowns (flex 2).
+/// Screening report: one card with fundus image on top, DR / glaucoma dropdowns below.
 class ScreeningReportCard extends StatelessWidget {
   final Map<String, dynamic> result;
   final String? imagePath;
@@ -28,28 +28,13 @@ class ScreeningReportCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (imagePath != null) ...[
-                Expanded(
-                  flex: 1,
-                  child: _FundusImage(path: imagePath!),
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                flex: 2,
-                child: Column(
-                  children: [
-                    if (dr != null) _DrReportSection(dr: dr),
-                    if (dr != null && gl != null) const SizedBox(height: 8),
-                    if (gl != null) _GlaucomaReportSection(gl: gl),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          if (imagePath != null) ...[
+            _FundusImage(path: imagePath!),
+            const SizedBox(height: 10),
+          ],
+          if (dr != null) _DrReportSection(dr: dr),
+          if (dr != null && gl != null) const SizedBox(height: 8),
+          if (gl != null) _GlaucomaReportSection(gl: gl),
           const SizedBox(height: 10),
           Text(
             _disclaimer,
@@ -74,10 +59,10 @@ class _FundusImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: ColoredBox(
-          color: Colors.black,
+      child: ColoredBox(
+        color: Colors.black,
+        child: AspectRatio(
+          aspectRatio: 16 / 10,
           child: Image.file(
             File(path),
             fit: BoxFit.contain,

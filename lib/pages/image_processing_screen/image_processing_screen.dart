@@ -625,18 +625,26 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     if (message.isScreeningReport) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildAIAvatar(),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ScreeningReportCard(
-                result: message.screeningResult!,
-                imagePath: message.imagePath,
-              ),
-            ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Card is 80% of content width, capped so avatar + gap still fit.
+            final cardWidth = (constraints.maxWidth * 0.8)
+                .clamp(0.0, constraints.maxWidth - _avatarSize - 8);
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildAIAvatar(),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: cardWidth,
+                  child: ScreeningReportCard(
+                    result: message.screeningResult!,
+                    imagePath: message.imagePath,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       );
     }
