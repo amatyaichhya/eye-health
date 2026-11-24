@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:eye_health/services/hf_service.dart';
 import 'package:eye_health/services/screening_service.dart';
 import 'package:eye_health/theme/app_theme.dart';
+import 'package:eye_health/utils/utility_methods/color_print.dart';
 import 'package:eye_health/widgets/screening_report_card.dart';
 import 'package:flutter/material.dart';
 
@@ -112,6 +113,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
 
   /// Add screening report card(s) to chat
   void _addScreeningReports(List<Map<String, dynamic>> results) {
+    colorPrint('Screening report messages: $results');
     setState(() {
       for (final item in results) {
         _messages.add(
@@ -169,6 +171,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       }
 
       final result = await ScreeningService.screenImages(widget.photos!);
+      colorPrint('Screening response: $result');
       if (result['success'] == true) {
         _handleProcessingSuccess(result);
       } else {
@@ -627,7 +630,6 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
         padding: const EdgeInsets.only(bottom: 12),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Card is 80% of content width, capped so avatar + gap still fit.
             final cardWidth = (constraints.maxWidth * 0.8)
                 .clamp(0.0, constraints.maxWidth - _avatarSize - 8);
             return Row(

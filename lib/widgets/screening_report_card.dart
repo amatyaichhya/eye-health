@@ -12,6 +12,15 @@ class ScreeningReportCard extends StatelessWidget {
   static const _disclaimer =
       'Screening support only. A qualified clinician makes the diagnosis.';
 
+  /// DR grades 0–4 (multi-class).
+  static const drGradeLabels = {
+    0: 'No DR',
+    1: 'Mild NPDR',
+    2: 'Moderate NPDR',
+    3: 'Severe NPDR',
+    4: 'Proliferative DR',
+  };
+
   const ScreeningReportCard({
     super.key,
     required this.result,
@@ -22,6 +31,7 @@ class ScreeningReportCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final dr = _asMap(result['diabetic_retinopathy']);
     final gl = _asMap(result['glaucoma']);
+    final imageName = _imageName(result, imagePath);
 
     return AppCard(
       padding: const EdgeInsets.all(10),
@@ -30,6 +40,17 @@ class ScreeningReportCard extends StatelessWidget {
         children: [
           if (imagePath != null) ...[
             _FundusImage(path: imagePath!),
+            const SizedBox(height: 8),
+          ],
+          if (imageName != null) ...[
+            Text(
+              imageName,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 10),
           ],
           if (dr != null) _DrReportSection(dr: dr),
@@ -47,6 +68,13 @@ class ScreeningReportCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  static String? _imageName(Map<String, dynamic> result, String? imagePath) {
+    final fromResult = result['filename']?.toString().trim();
+    if (fromResult != null && fromResult.isNotEmpty) return fromResult;
+    if (imagePath == null || imagePath.isEmpty) return null;
+    return imagePath.split(RegExp(r'[/\\]')).last;
   }
 }
 
@@ -81,12 +109,14 @@ class _ExpandableResultSection extends StatefulWidget {
   final String resultLabel;
   final String subtitle;
   final List<Widget> detailChildren;
+  final bool initiallyExpanded;
 
   const _ExpandableResultSection({
     required this.title,
     required this.resultLabel,
     required this.subtitle,
     required this.detailChildren,
+    this.initiallyExpanded = false,
   });
 
   @override
@@ -95,7 +125,7 @@ class _ExpandableResultSection extends StatefulWidget {
 }
 
 class _ExpandableResultSectionState extends State<_ExpandableResultSection> {
-  bool _expanded = false;
+  late bool _expanded = widget.initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -107,6 +137,7 @@ class _ExpandableResultSectionState extends State<_ExpandableResultSection> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          initiallyExpanded: widget.initiallyExpanded,
           tilePadding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
           onExpansionChanged: (open) => setState(() => _expanded = open),
@@ -157,35 +188,53 @@ class _ExpandableResultSectionState extends State<_ExpandableResultSection> {
 class _DrReportSection extends StatelessWidget {
   final Map<String, dynamic> dr;
 
-  static const _drShortLabels = {
-    0: 'No DR',
-    1: 'Mild',
-    2: 'Moderate',
-    3: 'Severe',
-    4: 'Proliferative',
-  };
-
   const _DrReportSection({required this.dr});
 
   @override
   Widget build(BuildContext context) {
     final grade = _asInt(dr['grade']) ?? 0;
-    final label =
-        (dr['label'] ?? _drShortLabels[grade] ?? 'Grade $grade').toString();
+    final label = (dr['label'] ??
+            ScreeningReportCard.drGradeLabels[grade] ??
+            'Grade $grade')
+        .toString();
     final probs = _asMap(dr['probabilities']) ?? {};
-    final referablePct = _referableProbability(probs);
-    final isReferable = grade >= 2;
+    final referablePct =
+        _asDouble(dr['referable_probability']) ?? _referableProbability(probs);
+    final isReferable =
+        dr['referable'] is bool ? dr['referable'] as bool : grade >= 2;
+    final gradeConf = _asDouble(probs['$grade']) ?? 0;
 
     return _ExpandableResultSection(
       title: 'Diabetic retinopathy',
       resultLabel: label,
       subtitle: isReferable
-          ? 'Referable (${_pct(referablePct)})'
-          : 'Not referable (${_pct(referablePct)})',
-      detailChildren: List.generate(5, (i) {
-        final p = _asDouble(probs['$i']) ?? 0;
-        return _probRow(_drShortLabels[i] ?? 'Grade $i', p);
-      }),
+          ? 'Referable (${_pct(referablePct)}) · Confidence ${_pct(gradeConf)}'
+          : 'Not referable (${_pct(referablePct)}) · Confidence ${_pct(gradeConf)}',
+      detailChildren: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Class probabilities',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ),
+        ...List.generate(5, (i) {
+          final p = _asDouble(probs['$i']) ?? 0;
+          final name = ScreeningReportCard.drGradeLabels[i] ?? 'Class $i';
+          return _probRow(
+            name,
+            p,
+            highlight: i == grade,
+          );
+        }),
+      ],
     );
   }
 
@@ -223,7 +272,7 @@ class _GlaucomaReportSection extends StatelessWidget {
   }
 }
 
-Widget _probRow(String label, double probability) {
+Widget _probRow(String label, double probability, {bool highlight = false}) {
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Row(
@@ -231,18 +280,19 @@ Widget _probRow(String label, double probability) {
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: AppColors.textPrimary,
+              fontWeight: highlight ? FontWeight.w700 : FontWeight.w400,
+              color: highlight ? AppColors.primaryDark : AppColors.textPrimary,
             ),
           ),
         ),
         Text(
           _pct(probability),
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textPrimary,
+            fontWeight: highlight ? FontWeight.w700 : FontWeight.w500,
+            color: highlight ? AppColors.primaryDark : AppColors.textPrimary,
           ),
         ),
       ],

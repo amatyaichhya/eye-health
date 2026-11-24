@@ -11,17 +11,40 @@ class ScreeningService {
 
   static bool isConfigured() => ScreeningApiConfig.isConfigured;
 
+  /// Prefer a human-readable file name over iOS `image_picker_…` temp names.
+  static String displayFileName(XFile image, {String? serverFilename}) {
+    final basename = image.path.split(RegExp(r'[/\\]')).last;
+    for (final candidate in [image.name, serverFilename, basename]) {
+      if (candidate == null || candidate.trim().isEmpty) continue;
+      if (!_isTempPickerName(candidate)) return candidate;
+    }
+    return image.name.isNotEmpty ? image.name : basename;
+  }
+
+  static bool _isTempPickerName(String name) {
+    return name.startsWith('image_picker_') ||
+        name.startsWith('scaled_') ||
+        RegExp(
+          r'^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}',
+        ).hasMatch(name);
+  }
+
   /// Screens one fundus image via POST /screen (multipart file).
   static Future<Map<String, dynamic>> screenImage(XFile image) async {
     try {
       colorPrint('Screening via ${ScreeningApiConfig.screenEndpoint}');
 
+      final displayName = displayFileName(image);
       final request = http.MultipartRequest(
         'POST',
         Uri.parse(ScreeningApiConfig.screenEndpoint),
       );
       request.files.add(
-        await http.MultipartFile.fromPath('file', image.path),
+        await http.MultipartFile.fromPath(
+          'file',
+          image.path,
+          filename: displayName,
+        ),
       );
 
       final streamed = await request.send().timeout(_timeout);
@@ -63,10 +86,10 @@ class ScreeningService {
       // Attach local path so the chat report can show the fundus image.
       final withLocal = Map<String, dynamic>.from(result);
       withLocal['local_path'] = image.path;
-      withLocal['filename'] =
-          result['filename']?.toString().isNotEmpty == true
-              ? result['filename']
-              : image.name;
+      withLocal['filename'] = displayFileName(
+        image,
+        serverFilename: result['filename']?.toString(),
+      );
       results.add(withLocal);
       if (result['success'] != true) {
         return {

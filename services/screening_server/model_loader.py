@@ -8,6 +8,7 @@ from typing import Any
 import timm
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 
@@ -69,8 +70,39 @@ def _infer_num_classes(state_dict: dict[str, torch.Tensor], default: int) -> int
     return default
 
 
-def _build_and_load(arch: str, checkpoint: Path, default_classes: int) -> nn.Module:
+def _read_checkpoint_meta(raw: Any) -> dict[str, Any]:
+    """Pull training flags used at inference (feature norm, referral threshold)."""
+    meta: dict[str, Any] = {
+        "use_feature_norm": True,  # both shipped checkpoints trained with this
+        "best_ref_thr": None,
+        "img_size": 224,
+    }
+    if not isinstance(raw, dict):
+        return meta
+
+    if "best_ref_thr" in raw:
+        try:
+            meta["best_ref_thr"] = float(raw["best_ref_thr"])
+        except (TypeError, ValueError):
+            pass
+
+    sig = raw.get("training_signature")
+    if isinstance(sig, dict):
+        if "use_feature_norm" in sig:
+            meta["use_feature_norm"] = bool(sig["use_feature_norm"])
+        if "img_size" in sig:
+            try:
+                meta["img_size"] = int(sig["img_size"])
+            except (TypeError, ValueError):
+                pass
+    return meta
+
+
+def _build_and_load(
+    arch: str, checkpoint: Path, default_classes: int
+) -> tuple[nn.Module, dict[str, Any]]:
     raw = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    meta = _read_checkpoint_meta(raw)
     state_dict = _extract_state_dict(raw)
     num_classes = _infer_num_classes(state_dict, default_classes)
     model = timm.create_model(arch, pretrained=False, num_classes=num_classes)
@@ -80,7 +112,12 @@ def _build_and_load(arch: str, checkpoint: Path, default_classes: int) -> nn.Mod
     if unexpected:
         print(f"[{arch}] unexpected keys ({len(unexpected)}): {unexpected[:5]}...")
     model.eval()
-    return model
+    print(
+        f"[{arch}] classes={num_classes} "
+        f"feature_norm={meta['use_feature_norm']} "
+        f"best_ref_thr={meta['best_ref_thr']}"
+    )
+    return model, meta
 
 
 def default_transform(image_size: int = 224) -> transforms.Compose:
@@ -102,7 +139,6 @@ class ScreeningModels:
         self.device = torch.device(
             device or ("cuda" if torch.cuda.is_available() else "cpu")
         )
-        self.transform = default_transform(224)
 
         dr_path = model_dir / "mobilevit_s_diabetic_retinopathy.pt"
         gl_path = model_dir / "mobileone_s4_glaucoma_class_sinkhorn_seed45.pt"
@@ -112,27 +148,62 @@ class ScreeningModels:
             )
 
         print(f"Loading models on {self.device} from {model_dir}")
-        # timm names
-        self.dr_model = _build_and_load("mobilevit_s", dr_path, default_classes=5).to(
-            self.device
+        self.dr_model, self.dr_meta = _build_and_load(
+            "mobilevit_s", dr_path, default_classes=5
         )
-        self.glaucoma_model = _build_and_load(
+        self.dr_model = self.dr_model.to(self.device)
+
+        self.glaucoma_model, self.gl_meta = _build_and_load(
             "mobileone_s4", gl_path, default_classes=2
-        ).to(self.device)
+        )
+        self.glaucoma_model = self.glaucoma_model.to(self.device)
+
+        img_size = int(self.dr_meta.get("img_size") or 224)
+        self.transform = default_transform(img_size)
         print("Models loaded.")
+
+    def _forward_logits(self, model: nn.Module, batch: torch.Tensor, *, use_feature_norm: bool) -> torch.Tensor:
+        """Match training forward: pool → optional L2 feature norm → linear head."""
+        features = model.forward_features(batch)
+        pooled = model.head.global_pool(features)
+        if use_feature_norm:
+            pooled = F.normalize(pooled, p=2, dim=1)
+        pooled = model.head.drop(pooled)
+        return model.head.fc(pooled)
 
     @torch.inference_mode()
     def predict(self, image: Image.Image) -> dict[str, Any]:
         rgb = image.convert("RGB")
         batch = self.transform(rgb).unsqueeze(0).to(self.device)
 
-        dr_logits = self.dr_model(batch)
+        dr_logits = self._forward_logits(
+            self.dr_model,
+            batch,
+            use_feature_norm=bool(self.dr_meta.get("use_feature_norm", True)),
+        )
         dr_probs = torch.softmax(dr_logits, dim=1)[0]
         dr_grade = int(torch.argmax(dr_probs).item())
+        # Referable DR ≈ moderate or worse (grades 2–4)
+        referable_prob = float(dr_probs[2:].sum().item()) if dr_probs.numel() >= 5 else 0.0
+        ref_thr = self.dr_meta.get("best_ref_thr")
+        if ref_thr is None:
+            referable = dr_grade >= 2
+        else:
+            referable = referable_prob >= float(ref_thr)
 
-        gl_logits = self.glaucoma_model(batch)
+        gl_logits = self._forward_logits(
+            self.glaucoma_model,
+            batch,
+            use_feature_norm=bool(self.gl_meta.get("use_feature_norm", True)),
+        )
         gl_probs = torch.softmax(gl_logits, dim=1)[0]
         gl_pred = int(torch.argmax(gl_probs).item())
+        gl_pos = float(gl_probs[1].item()) if gl_probs.numel() > 1 else float(gl_probs[0].item())
+        gl_thr = self.gl_meta.get("best_ref_thr")
+        if gl_thr is not None:
+            gl_positive = gl_pos >= float(gl_thr)
+        else:
+            gl_positive = bool(gl_pred == 1)
 
         return {
             "diabetic_retinopathy": {
@@ -141,16 +212,22 @@ class ScreeningModels:
                 "probabilities": {
                     str(i): float(dr_probs[i].item()) for i in range(dr_probs.numel())
                 },
+                "referable": referable,
+                "referable_probability": referable_prob,
+                "referable_threshold": ref_thr,
             },
             "glaucoma": {
-                "positive": bool(gl_pred == 1),
+                "positive": gl_positive,
                 "class_index": gl_pred,
-                "label": "Suggestive of glaucoma" if gl_pred == 1 else "No glaucoma suggested",
+                "label": (
+                    "Suggestive of glaucoma"
+                    if gl_positive
+                    else "No glaucoma suggested"
+                ),
                 "probabilities": {
                     "negative": float(gl_probs[0].item()) if gl_probs.numel() > 0 else None,
-                    "positive": float(gl_probs[1].item())
-                    if gl_probs.numel() > 1
-                    else float(gl_probs[0].item()),
+                    "positive": gl_pos,
                 },
+                "threshold": gl_thr,
             },
         }
