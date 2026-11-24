@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:eye_health/services/hf_service.dart';
 import 'package:eye_health/services/screening_service.dart';
 import 'package:eye_health/theme/app_theme.dart';
+import 'package:eye_health/widgets/screening_report_card.dart';
 import 'package:flutter/material.dart';
 
 /// Screen for processing fundus photos and providing AI-powered eye health analysis
@@ -109,6 +110,31 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     _scrollToBottom();
   }
 
+  /// Add screening report card(s) to chat
+  void _addScreeningReports(List<Map<String, dynamic>> results) {
+    setState(() {
+      for (final item in results) {
+        _messages.add(
+          ChatMessage(
+            text: ScreeningService.formatResultMessage({'results': [item]}),
+            isUser: false,
+            timestamp: DateTime.now(),
+            screeningResult: item,
+            imagePath: item['local_path']?.toString(),
+          ),
+        );
+      }
+      _messages.add(
+        ChatMessage(
+          text: _closingMessage,
+          isUser: false,
+          timestamp: DateTime.now(),
+        ),
+      );
+    });
+    _scrollToBottom();
+  }
+
   /// Add user message to chat
   void _addUserMessage(String text) {
     setState(() {
@@ -185,109 +211,39 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
 
   /// Handle processing error
   void _handleProcessingError(String error) {
-    if (mounted) {
-      setState(() {
-        _errorMessage = error;
-        _isProcessing = false;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _errorMessage = error;
+      _isProcessing = false;
+    });
+    _addAIMessage(error);
   }
 
   /// Add formatted analysis results message to chat
   void _addAnalysisCompleteMessage() {
-    if (_isAnalysisSuccessful) {
-      final analysisMessage = _buildAnalysisMessage();
-      _addAIMessage(analysisMessage);
+    if (!_isAnalysisSuccessful) return;
+
+    final reports = ScreeningService.extractResults(_analysisResult!);
+    if (reports.isNotEmpty) {
+      // Attach local paths from the uploaded photos if the API omitted them.
+      for (var i = 0; i < reports.length; i++) {
+        if (reports[i]['local_path'] == null &&
+            widget.photos != null &&
+            i < widget.photos!.length) {
+          reports[i]['local_path'] = widget.photos![i].path;
+          reports[i]['filename'] ??= widget.photos![i].name;
+        }
+      }
+      _addScreeningReports(reports);
+      return;
     }
+
+    _addAIMessage(_closingMessage);
   }
 
   /// Check if analysis was successful
   bool get _isAnalysisSuccessful =>
       _analysisResult != null && _analysisResult!['success'] == true;
-
-  /// Build formatted analysis message from results
-  String _buildAnalysisMessage() {
-    if (!_isAnalysisSuccessful) return '';
-
-    // Local screening API response
-    if (_analysisResult!['source'] == 'local_screening' ||
-        _analysisResult!.containsKey('diabetic_retinopathy') ||
-        _analysisResult!.containsKey('results')) {
-      return ScreeningService.formatResultMessage(_analysisResult!);
-    }
-
-    // Legacy HF-shaped response (if still present)
-    final analysis = _getAnalysisData();
-    final buffer = StringBuffer();
-
-    _addAnalysisField(buffer, "Assessment", analysis['likelihood']);
-    _addAnalysisField(buffer, "Confidence", analysis['confidence']);
-    _addPossibleCondition(buffer, analysis['possible_condition']);
-    _addAnalysisField(
-      buffer,
-      "Description",
-      analysis['description'],
-      addExtraNewline: true,
-    );
-    _addListField(buffer, "Visual Indicators", analysis['visual_indicators']);
-    _addListField(buffer, "Recommendations", analysis['recommendations']);
-
-    buffer.write(_closingMessage);
-    return buffer.toString();
-  }
-
-  /// Get analysis data from result (HF legacy shape)
-  Map<String, dynamic> _getAnalysisData() {
-    final outerData = _analysisResult!['analysis'];
-    if (outerData is Map) {
-      return Map<String, dynamic>.from(
-        outerData['analysis'] is Map
-            ? outerData['analysis'] as Map
-            : outerData,
-      );
-    }
-    return {};
-  }
-
-  /// Add a simple field to the analysis message
-  void _addAnalysisField(
-    StringBuffer buffer,
-    String label,
-    dynamic value, {
-    bool addExtraNewline = false,
-  }) {
-    if (value != null) {
-      buffer.writeln("**$label:** $value");
-      if (addExtraNewline) buffer.writeln();
-    }
-  }
-
-  /// Add the possible condition field with proper formatting
-  void _addPossibleCondition(StringBuffer buffer, dynamic condition) {
-    if (condition == null) return;
-
-    String conditionText;
-    if (condition is String) {
-      conditionText = condition;
-    } else if (condition is Map && condition.values.isNotEmpty) {
-      conditionText =
-          condition.values.first?.toString() ?? 'Educational observation';
-    } else {
-      return;
-    }
-    buffer.writeln("**Possible Condition:** $conditionText\n");
-  }
-
-  /// Add a list field to the analysis message
-  void _addListField(StringBuffer buffer, String label, dynamic listData) {
-    if (listData is List && listData.isNotEmpty) {
-      buffer.writeln("**$label:**");
-      for (final item in listData) {
-        buffer.writeln("• $item");
-      }
-      buffer.writeln();
-    }
-  }
 
   /// Send user message to AI service
   Future<void> _sendMessage() async {
@@ -666,6 +622,33 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   Widget _buildChatMessageItem(int index, double fontSize) {
     final message = _messages[index];
 
+    if (message.isScreeningReport) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Card is 80% of content width, capped so avatar + gap still fit.
+            final cardWidth = (constraints.maxWidth * 0.8)
+                .clamp(0.0, constraints.maxWidth - _avatarSize - 8);
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildAIAvatar(),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: cardWidth,
+                  child: ScreeningReportCard(
+                    result: message.screeningResult!,
+                    imagePath: message.imagePath,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -826,12 +809,18 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final DateTime timestamp;
+  final Map<String, dynamic>? screeningResult;
+  final String? imagePath;
 
   const ChatMessage({
     required this.text,
     required this.isUser,
     required this.timestamp,
+    this.screeningResult,
+    this.imagePath,
   });
+
+  bool get isScreeningReport => screeningResult != null;
 
   Map<String, dynamic> toMap() {
     return {'text': text, 'isUser': isUser, 'timestamp': timestamp};
@@ -900,10 +889,6 @@ class _ChatBubbleState extends State<ChatBubble> {
     setState(() => isExpanded = !isExpanded);
   }
 
-  /// Check if this is the first AI message with image
-  bool get _shouldShowReportHeader =>
-      widget.index == 0 && !widget.message.isUser && widget.hasImage;
-
   @override
   Widget build(BuildContext context) {
     return Flexible(
@@ -924,25 +909,9 @@ class _ChatBubbleState extends State<ChatBubble> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_shouldShowReportHeader) _buildReportHeader(),
             _buildMessageText(),
             if (needsExpansion) _buildExpandToggle(),
           ],
-        ),
-      ),
-    );
-  }
-
-  /// Build report header for analysis results
-  Widget _buildReportHeader() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2.0),
-      child: Text(
-        'Fundus exam report:',
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: widget.message.isUser ? Colors.white : Colors.black87,
         ),
       ),
     );

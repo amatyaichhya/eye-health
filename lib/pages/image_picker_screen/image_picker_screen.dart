@@ -374,23 +374,15 @@ class _ImagePickerScreenState extends State<ImagePickerScreen> {
       _isProcessingDone = true;
     });
 
-    // Navigate to results/processing page
-    Navigator.push(
-      context,
+    final photos = List<XFile>.from(_selectedPhotos);
+
+    // Clear picker/preview from the stack so Back returns to home.
+    Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (context) {
-          return PhotoProcessingScreen(photos: _selectedPhotos);
-          // return StaticImageProcessingScreen(photos: _selectedPhotos);
-        },
+        builder: (_) => PhotoProcessingScreen(photos: photos),
       ),
-    ).then((_) {
-      // Reset the flag when returning from processing screen
-      if (mounted) {
-        setState(() {
-          _isProcessingDone = false;
-        });
-      }
-    });
+      (route) => route.isFirst,
+    );
   }
 
   void _clearAllPhotos() {
@@ -1463,14 +1455,17 @@ class _MultiPhotoPreviewScreenState extends State<_MultiPhotoPreviewScreen> {
                 const SizedBox(width: 20),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: widget.onDone,
+                    onPressed: () {
+                      widget.onPhotosUpdated(_photos);
+                      widget.onDone();
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 15),
                     ),
-                    child: Text(
+                    child: const Text(
                       'Done',
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: Colors.white),
                     ),
                   ),
                 ),
