@@ -1,13 +1,13 @@
-import 'dart:io';
-
 import 'package:camera/camera.dart';
+import 'package:eye_health/pages/image_processing_screen/chat_message.dart';
+import 'package:eye_health/pages/image_processing_screen/widgets/chat_composer.dart';
+import 'package:eye_health/pages/image_processing_screen/widgets/chat_thread.dart';
 import 'package:eye_health/services/health_statistics_store.dart';
 import 'package:eye_health/services/hf_service.dart';
 import 'package:eye_health/services/screening_service.dart';
 import 'package:eye_health/theme/app_theme.dart';
 import 'package:eye_health/utils/utility_methods/app_toast.dart';
 import 'package:eye_health/utils/utility_methods/color_print.dart';
-import 'package:eye_health/widgets/screening_report_card.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart' as img_picker;
 
@@ -484,21 +484,47 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_messages.isNotEmpty) _buildChatMessages(fontSize),
-                    if (_isProcessing) _buildLoadingIndicator(),
+                    if (_messages.isNotEmpty)
+                      ChatThread(
+                        messages: _messages,
+                        isSending: _isSendingMessage,
+                        hasPhotos: _hasPhotos,
+                        fontSize: fontSize,
+                        thinkingText: _aiThinkingText,
+                        maxLines: _maxChatBubbleLines,
+                        maxWidthRatio: _maxMessageWidthRatio,
+                        avatarSize: _avatarSize,
+                      ),
+                    if (_isProcessing) const _ScreeningProgress(),
                   ],
                 ),
               ),
             ),
-            _buildMessageInput(),
+            ChatComposer(
+              controller: _messageController,
+              hintText: _getHintText(),
+              inputEnabled: !_isProcessing,
+              sendEnabled: !_isSendingMessage && !_isProcessing,
+              attachEnabled:
+                  !_isProcessing && !_isSendingMessage && !_isPickingMore,
+              isAttaching: _isPickingMore,
+              isTab: !widget.showBackButton,
+              onSend: _sendMessage,
+              onAttach: _uploadMorePhotos,
+            ),
           ],
         ),
       ),
     );
   }
 
-  /// Build loading indicator
-  Widget _buildLoadingIndicator() {
+}
+
+class _ScreeningProgress extends StatelessWidget {
+  const _ScreeningProgress();
+
+  @override
+  Widget build(BuildContext context) {
     return const Center(
       child: Padding(
         padding: EdgeInsets.all(32),
@@ -506,540 +532,4 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       ),
     );
   }
-
-  /// Build chat messages list
-  Widget _buildChatMessages(double fontSize) {
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _messages.length + (_isSendingMessage ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == _messages.length && _isSendingMessage) {
-          return _buildTypingIndicator();
-        }
-        return _buildChatMessageItem(index, fontSize);
-      },
-    );
-  }
-
-  /// Build typing indicator
-  Widget _buildTypingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildAIAvatar(),
-          const SizedBox(width: 8),
-          _buildTypingBubble(),
-        ],
-      ),
-    );
-  }
-
-  /// Build typing bubble
-  Widget _buildTypingBubble() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(18),
-          topRight: Radius.circular(18),
-          bottomLeft: Radius.circular(4),
-          bottomRight: Radius.circular(18),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            _aiThinkingText,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade600,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          const SizedBox(width: 8),
-          const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              color: AppColors.primary,
-              strokeWidth: 2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build individual chat message item
-  Widget _buildChatMessageItem(int index, double fontSize) {
-    final message = _messages[index];
-
-    if (message.isScreeningReport) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final cardWidth = (constraints.maxWidth * 0.8)
-                .clamp(0.0, constraints.maxWidth - _avatarSize - 8);
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildAIAvatar(),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: cardWidth,
-                  child: ScreeningReportCard(
-                    result: message.screeningResult!,
-                    imagePath: message.imagePath,
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    }
-
-    if (message.isUserPhotoUpload) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Flexible(
-              child: _buildUserPhotoBubble(message, fontSize),
-            ),
-            const SizedBox(width: 8),
-            _buildUserAvatar(),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          if (!message.isUser) ...[_buildAIAvatar(), const SizedBox(width: 8)],
-          ChatBubble(
-            message: message,
-            index: index,
-            hasImage: _hasPhotos,
-            fontSize: fontSize,
-            maxLines: _maxChatBubbleLines,
-            maxWidthRatio: _maxMessageWidthRatio,
-          ),
-          if (message.isUser) ...[const SizedBox(width: 8), _buildUserAvatar()],
-        ],
-      ),
-    );
-  }
-
-  /// Right-aligned user bubble for uploaded fundus photos (assistant-like style).
-  Widget _buildUserPhotoBubble(ChatMessage message, double fontSize) {
-    final paths = message.imagePaths ?? const <String>[];
-    return Container(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.sizeOf(context).width * _maxMessageWidthRatio,
-      ),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(18),
-          topRight: Radius.circular(18),
-          bottomLeft: Radius.circular(18),
-          bottomRight: Radius.circular(4),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            message.text,
-            style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-              height: 1.3,
-            ),
-          ),
-          if (paths.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final path in paths)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.file(
-                      File(path),
-                      width: paths.length == 1 ? 140 : 72,
-                      height: paths.length == 1 ? 140 : 72,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// Build AI avatar
-  Widget _buildAIAvatar() {
-    return Container(
-      width: _avatarSize,
-      height: _avatarSize,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 6,
-            spreadRadius: 0.5,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ClipOval(
-        child: Image.asset(
-          'assets/icons/launcher_icon.png',
-          width: _avatarSize,
-          height: _avatarSize,
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
-  }
-
-  /// Build user avatar
-  Widget _buildUserAvatar() {
-    return Container(
-      width: _avatarSize + 4,
-      height: _avatarSize + 4,
-      decoration: const BoxDecoration(
-        color: AppColors.primarySoft,
-        shape: BoxShape.circle,
-      ),
-      child: const Icon(
-        Icons.person,
-        color: AppColors.primaryDark,
-        size: 20,
-      ),
-    );
-  }
-
-  /// Build message input section
-  Widget _buildMessageInput() {
-    final isTab = !widget.showBackButton;
-
-    return Container(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, isTab ? 8 : 12),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 12,
-            offset: Offset(0, -3),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        // Tab mode: bottom nav handles SafeArea; leave room above the bar.
-        bottom: !isTab,
-        child: Padding(
-          padding: EdgeInsets.only(bottom: isTab ? 72 : 0),
-          child: Row(
-            children: [
-              _buildAttachButton(),
-              const SizedBox(width: 8),
-              Expanded(child: _buildTextInput()),
-              const SizedBox(width: 12),
-              _buildSendButton(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Build text input field
-  Widget _buildTextInput() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: TextField(
-        controller: _messageController,
-        enabled: !_isProcessing,
-        decoration: InputDecoration(
-          hintText: _getHintText(),
-          hintStyle: TextStyle(color: Colors.grey.shade500),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 12,
-          ),
-        ),
-        onSubmitted: (_) => _isProcessing ? null : _sendMessage(),
-        maxLines: null,
-        textCapitalization: TextCapitalization.sentences,
-      ),
-    );
-  }
-
-  /// Plus button to upload more fundus photos from chat.
-  Widget _buildAttachButton() {
-    final isDisabled =
-        _isProcessing || _isSendingMessage || _isPickingMore;
-
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: isDisabled ? Colors.grey.shade300 : AppColors.primarySoft,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child:
-          _isPickingMore
-              ? const Padding(
-                padding: EdgeInsets.all(10),
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.primary,
-                ),
-              )
-              : IconButton(
-                onPressed: isDisabled ? null : _uploadMorePhotos,
-                tooltip: 'Upload fundus photos',
-                icon: Icon(
-                  Icons.add,
-                  color: isDisabled ? Colors.grey : AppColors.primaryDark,
-                  size: 22,
-                ),
-              ),
-    );
-  }
-
-  /// Build send button
-  Widget _buildSendButton() {
-    final isDisabled = _isSendingMessage || _isProcessing;
-
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: isDisabled ? Colors.grey : AppColors.primary,
-        shape: BoxShape.circle,
-      ),
-      child:
-          isDisabled
-              ? const Padding(
-                padding: EdgeInsets.all(12.0),
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-              : IconButton(
-                onPressed: isDisabled ? null : _sendMessage,
-                icon: const Icon(Icons.send, color: Colors.white, size: 20),
-              ),
-    );
-  }
 }
-
-/// Data model for chat messages
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  final DateTime timestamp;
-  final Map<String, dynamic>? screeningResult;
-  final String? imagePath;
-  final List<String>? imagePaths;
-
-  const ChatMessage({
-    required this.text,
-    required this.isUser,
-    required this.timestamp,
-    this.screeningResult,
-    this.imagePath,
-    this.imagePaths,
-  });
-
-  bool get isScreeningReport => screeningResult != null;
-  bool get isUserPhotoUpload =>
-      isUser && imagePaths != null && imagePaths!.isNotEmpty;
-
-  Map<String, dynamic> toMap() {
-    return {'text': text, 'isUser': isUser, 'timestamp': timestamp};
-  }
-}
-
-/// Reusable chat bubble widget with expand/collapse functionality
-class ChatBubble extends StatefulWidget {
-  final ChatMessage message;
-  final int index;
-  final bool hasImage;
-  final double fontSize;
-  final int maxLines;
-  final double maxWidthRatio;
-
-  const ChatBubble({
-    super.key,
-    required this.message,
-    required this.index,
-    required this.hasImage,
-    this.fontSize = 14.0,
-    this.maxLines = 4,
-    this.maxWidthRatio = 0.75,
-  });
-
-  @override
-  State<ChatBubble> createState() => _ChatBubbleState();
-}
-
-class _ChatBubbleState extends State<ChatBubble> {
-  bool isExpanded = false;
-  bool needsExpansion = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkIfExpansionNeeded();
-    });
-  }
-
-  /// Check if text needs expansion toggle
-  void _checkIfExpansionNeeded() {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: widget.message.text,
-        style: const TextStyle(fontSize: 14, height: 1.4),
-      ),
-      maxLines: widget.maxLines,
-      textDirection: TextDirection.ltr,
-    );
-
-    final maxWidth =
-        MediaQuery.of(context).size.width * widget.maxWidthRatio - 32;
-    textPainter.layout(maxWidth: maxWidth);
-
-    if (mounted) {
-      setState(() {
-        needsExpansion = textPainter.didExceedMaxLines;
-      });
-    }
-  }
-
-  /// Toggle expansion state
-  void _toggleExpansion() {
-    setState(() => isExpanded = !isExpanded);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Flexible(
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * widget.maxWidthRatio,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: widget.message.isUser ? Colors.white : Colors.grey.shade200,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(widget.message.isUser ? 18 : 4),
-            bottomRight: Radius.circular(widget.message.isUser ? 4 : 18),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildMessageText(),
-            if (needsExpansion) _buildExpandToggle(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build message text
-  Widget _buildMessageText() {
-    return Text(
-      widget.message.text,
-      style: TextStyle(
-        fontSize: widget.fontSize,
-        height: 1.4,
-        color: Colors.black87,
-      ),
-      maxLines: isExpanded ? null : widget.maxLines,
-      overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
-    );
-  }
-
-  /// Build expand/collapse toggle
-  Widget _buildExpandToggle() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: InkWell(
-        onTap: _toggleExpansion,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 6.0),
-          child: Text(
-            isExpanded ? 'Read less' : 'more',
-            style: TextStyle(
-              color: Colors.grey.shade700,
-              fontSize: 12,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Example local screening API response (POST /screen):
-// {
-//   "success": true,
-//   "filename": "20170413112758639.jpg",
-//   "diabetic_retinopathy": {
-//     "grade": 1,
-//     "label": "Mild NPDR",
-//     "probabilities": {
-//       "0": 0.1878,
-//       "1": 0.2225,
-//       "2": 0.1925,
-//       "3": 0.1754,
-//       "4": 0.2218
-//     }
-//   },
-//   "glaucoma": {
-//     "positive": true,
-//     "class_index": 1,
-//     "label": "Suggestive of glaucoma",
-//     "probabilities": {
-//       "negative": 0.0,
-//       "positive": 1.0
-//     }
-//   }
-// }
