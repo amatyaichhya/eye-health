@@ -1,16 +1,27 @@
-import 'dart:io';
-
 import 'package:camera/camera.dart';
-import 'package:eye_health/global_widget/eye_health_appbar.dart';
+import 'package:eye_health/pages/image_processing_screen/chat_message.dart';
+import 'package:eye_health/pages/image_processing_screen/widgets/chat_composer.dart';
+import 'package:eye_health/pages/image_processing_screen/widgets/chat_thread.dart';
+import 'package:eye_health/services/health_statistics_store.dart';
 import 'package:eye_health/services/hf_service.dart';
+import 'package:eye_health/services/screening_service.dart';
+import 'package:eye_health/theme/app_theme.dart';
+import 'package:eye_health/utils/utility_methods/app_toast.dart';
+import 'package:eye_health/utils/utility_methods/color_print.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart' as img_picker;
 
 /// Screen for processing fundus photos and providing AI-powered eye health analysis
 /// Supports both image analysis and interactive chat consultation
 class PhotoProcessingScreen extends StatefulWidget {
   final List<XFile>? photos;
+  final bool showBackButton;
 
-  const PhotoProcessingScreen({super.key, required this.photos});
+  const PhotoProcessingScreen({
+    super.key,
+    required this.photos,
+    this.showBackButton = true,
+  });
 
   @override
   State<PhotoProcessingScreen> createState() => _PhotoProcessingScreenState();
@@ -20,8 +31,10 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   // State variables
   bool _isProcessing = false;
   bool _isSendingMessage = false;
+  bool _isPickingMore = false;
   Map<String, dynamic>? _analysisResult;
   String? _errorMessage;
+  late List<XFile> _photos;
   final List<ChatMessage> _messages = [];
 
   // Controllers
@@ -34,8 +47,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   static const int _maxChatBubbleLines = 4;
   static const double _maxMessageWidthRatio = 0.75;
   static const double _avatarSize = 30.0;
-  static const double _photoDisplaySize = 180.0;
-  static const double _multiplePhotoSize = 80.0;
+  static const int _maxPhotos = 5;
 
   // Text Constants
 
@@ -43,8 +55,9 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       "Feel free to ask me any questions about these results or about general eye health!";
   static const String _initialGreeting =
       'Hello! I\'m your AI Eye Health Assistant. I can help you with questions about eye health, diabetic retinopathy, preventive care, and general eye wellness. How can I assist you today?';
-  static const String _apiNotConfiguredError =
-      'HuggingFace API key not configured. Please add your API key to lib/config/open_api_config.dart';
+  static const String _screeningServerError =
+      'Screening is unavailable right now.\n\n'
+      'Please make sure the local screening server is running, then try again.';
   static const String _analysisFailedPrefix = 'Analysis failed: ';
   static const String _aiThinkingText = 'AI is thinking';
   static const String _fundusPhotoTakenText = 'Fundus photo taken:';
@@ -52,6 +65,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   @override
   void initState() {
     super.initState();
+    _photos = List<XFile>.from(widget.photos ?? const <XFile>[]);
     _initializeScreen();
   }
 
@@ -63,8 +77,10 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Initialize screen based on whether photos are provided
-  void _initializeScreen() {
+  Future<void> _initializeScreen() async {
     if (_hasPhotos) {
+      await _addUserPhotoMessage(_photos);
+      if (!mounted) return;
       _startProcessing();
     } else {
       _addInitialGreeting();
@@ -72,7 +88,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Check if photos are available
-  bool get _hasPhotos => widget.photos?.isNotEmpty ?? false;
+  bool get _hasPhotos => _photos.isNotEmpty;
 
   /// Scroll to bottom of chat with animation
   void _scrollToBottom() {
@@ -102,11 +118,65 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     _scrollToBottom();
   }
 
+  /// Add screening report card(s) to chat
+  void _addScreeningReports(List<Map<String, dynamic>> results) {
+    colorPrint('Screening report messages: $results');
+    setState(() {
+      for (final item in results) {
+        _messages.add(
+          ChatMessage(
+            text: ScreeningService.formatResultMessage({'results': [item]}),
+            isUser: false,
+            timestamp: DateTime.now(),
+            screeningResult: item,
+            imagePath: item['local_path']?.toString(),
+          ),
+        );
+      }
+      _messages.add(
+        ChatMessage(
+          text: _closingMessage,
+          isUser: false,
+          timestamp: DateTime.now(),
+        ),
+      );
+    });
+    _scrollToBottom();
+  }
+
   /// Add user message to chat
   void _addUserMessage(String text) {
     setState(() {
       _messages.add(
         ChatMessage(text: text, isUser: true, timestamp: DateTime.now()),
+      );
+    });
+    _scrollToBottom();
+  }
+
+  /// Add a right-aligned user message with fundus photo thumbnails.
+  /// Copies each photo into personal health statistics.
+  Future<void> _addUserPhotoMessage(List<XFile> photos) async {
+    if (photos.isEmpty) return;
+    final savedPaths = <String>[];
+    for (final photo in photos) {
+      final saved = await HealthStatisticsStore.saveChatImage(photo);
+      savedPaths.add(saved.imagePath);
+    }
+    if (!mounted) return;
+
+    final countLabel =
+        photos.length == 1
+            ? _fundusPhotoTakenText
+            : 'Fundus photos taken (${photos.length}):';
+    setState(() {
+      _messages.add(
+        ChatMessage(
+          text: countLabel,
+          isUser: true,
+          timestamp: DateTime.now(),
+          imagePaths: savedPaths,
+        ),
       );
     });
     _scrollToBottom();
@@ -123,22 +193,73 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     }
   }
 
-  /// Start photo processing workflow
-  Future<void> _startProcessing() async {
-    if (!_hasPhotos) return;
+  /// Start photo processing workflow (local screening models)
+  Future<void> _startProcessing({List<XFile>? onlyPhotos}) async {
+    final toScreen = onlyPhotos ?? _photos;
+    if (toScreen.isEmpty) return;
 
     _setProcessingState(true);
 
     try {
-      if (!HfService.isConfigured()) {
-        _handleProcessingError(_apiNotConfiguredError);
+      if (!ScreeningService.isConfigured()) {
+        _handleProcessingError(_screeningServerError);
         return;
       }
 
-      final result = await HfService.analyzeFungalInfection(widget.photos!);
-      _handleProcessingSuccess(result);
+      final result = await ScreeningService.screenImages(toScreen);
+      colorPrint('Screening response: $result');
+      if (result['success'] == true) {
+        _handleProcessingSuccess(result, screenedPhotos: toScreen);
+      } else {
+        final error =
+            result['error']?.toString() ??
+            'Something went wrong while screening this image.';
+        _handleProcessingError(error);
+      }
     } catch (e) {
       _handleProcessingError('$_analysisFailedPrefix${e.toString()}');
+    }
+  }
+
+  /// Pick additional fundus photos from chat and screen them.
+  Future<void> _uploadMorePhotos() async {
+    if (_isProcessing || _isSendingMessage || _isPickingMore) return;
+
+    final remaining = _maxPhotos - _photos.length;
+    if (remaining <= 0) {
+      showAppToast(
+        context,
+        'Maximum $_maxPhotos photos already added',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    setState(() => _isPickingMore = true);
+    try {
+      final picked = await img_picker.ImagePicker().pickMultiImage(
+        imageQuality: 80,
+        limit: remaining,
+      );
+      if (!mounted || picked.isEmpty) return;
+
+      final newPhotos =
+          picked.take(remaining).map((x) => XFile(x.path)).toList();
+      setState(() => _photos.addAll(newPhotos));
+      await _addUserPhotoMessage(newPhotos);
+      if (!mounted) return;
+      await _startProcessing(onlyPhotos: newPhotos);
+    } catch (e) {
+      colorPrint('Chat upload more error: $e');
+      if (mounted) {
+        showAppToast(
+          context,
+          'Could not open the photo picker. Please try again.',
+          type: AppToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isPickingMore = false);
     }
   }
 
@@ -153,112 +274,103 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Handle successful processing result
-  void _handleProcessingSuccess(Map<String, dynamic> result) {
+  void _handleProcessingSuccess(
+    Map<String, dynamic> result, {
+    List<XFile>? screenedPhotos,
+  }) {
     if (!mounted) return;
 
     setState(() {
-      _analysisResult = result;
+      _analysisResult = _mergeAnalysisResults(result);
       _isProcessing = false;
     });
 
     // Add analysis message after delay
     Future.delayed(_messageDelayDuration, () {
       if (mounted) {
-        _addAnalysisCompleteMessage();
+        _addAnalysisCompleteMessage(
+          screenedPhotos: screenedPhotos,
+          batchResult: result,
+        );
       }
     });
   }
 
+  /// Merge new screening results into existing analysis context for chat.
+  Map<String, dynamic> _mergeAnalysisResults(Map<String, dynamic> incoming) {
+    final existing = _analysisResult;
+    if (existing == null || existing['success'] != true) {
+      return incoming;
+    }
+
+    final merged = List<Map<String, dynamic>>.from(
+      ScreeningService.extractResults(existing),
+    );
+    merged.addAll(ScreeningService.extractResults(incoming));
+
+    return {
+      'success': true,
+      'source': 'local_screening',
+      'results': merged,
+      if (merged.isNotEmpty) 'primary': merged.first,
+    };
+  }
+
   /// Handle processing error
   void _handleProcessingError(String error) {
-    if (mounted) {
-      setState(() {
-        _errorMessage = error;
-        _isProcessing = false;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _errorMessage = error;
+      _isProcessing = false;
+    });
+    _addAIMessage(error);
   }
 
   /// Add formatted analysis results message to chat
-  void _addAnalysisCompleteMessage() {
-    if (_isAnalysisSuccessful) {
-      final analysisMessage = _buildAnalysisMessage();
-      _addAIMessage(analysisMessage);
+  Future<void> _addAnalysisCompleteMessage({
+    List<XFile>? screenedPhotos,
+    Map<String, dynamic>? batchResult,
+  }) async {
+    if (!_isAnalysisSuccessful) return;
+
+    final photosForAttach = screenedPhotos ?? _photos;
+    final reports = ScreeningService.extractResults(
+      batchResult ?? _analysisResult!,
+    );
+
+    if (reports.isNotEmpty) {
+      for (var i = 0; i < reports.length; i++) {
+        if (reports[i]['local_path'] == null && i < photosForAttach.length) {
+          reports[i]['local_path'] = photosForAttach[i].path;
+          reports[i]['filename'] ??= photosForAttach[i].name;
+        }
+        final sourcePath = reports[i]['local_path']?.toString();
+        if (sourcePath != null) {
+          final savedPath = await HealthStatisticsStore.savedPathFor(sourcePath);
+          if (savedPath != null) reports[i]['local_path'] = savedPath;
+          await HealthStatisticsStore.updateScreening(
+            sourcePath: sourcePath,
+            drLabel: _labelOf(reports[i]['diabetic_retinopathy']),
+            glaucomaLabel: _labelOf(reports[i]['glaucoma']),
+          );
+        }
+      }
+      if (!mounted) return;
+      _addScreeningReports(reports);
+      return;
     }
+
+    _addAIMessage(_closingMessage);
+  }
+
+  String? _labelOf(dynamic section) {
+    if (section is Map) return section['label']?.toString();
+    return null;
   }
 
   /// Check if analysis was successful
   bool get _isAnalysisSuccessful =>
       _analysisResult != null && _analysisResult!['success'] == true;
-
-  /// Build formatted analysis message from results
-  String _buildAnalysisMessage() {
-    if (!_isAnalysisSuccessful) return '';
-
-    final analysis = _getAnalysisData();
-    final buffer = StringBuffer();
-
-    _addAnalysisField(buffer, "Assessment", analysis['likelihood']);
-    _addAnalysisField(buffer, "Confidence", analysis['confidence']);
-    _addPossibleCondition(buffer, analysis['possible_condition']);
-    _addAnalysisField(
-      buffer,
-      "Description",
-      analysis['description'],
-      addExtraNewline: true,
-    );
-    _addListField(buffer, "Visual Indicators", analysis['visual_indicators']);
-    _addListField(buffer, "Recommendations", analysis['recommendations']);
-
-    buffer.write(_closingMessage);
-    return buffer.toString();
-  }
-
-  /// Get analysis data from result
-  Map<String, dynamic> _getAnalysisData() {
-    final outerData = _analysisResult!['analysis'];
-    return outerData['analysis'] ?? {};
-  }
-
-  /// Add a simple field to the analysis message
-  void _addAnalysisField(
-    StringBuffer buffer,
-    String label,
-    dynamic value, {
-    bool addExtraNewline = false,
-  }) {
-    if (value != null) {
-      buffer.writeln("**$label:** $value");
-      if (addExtraNewline) buffer.writeln();
-    }
-  }
-
-  /// Add the possible condition field with proper formatting
-  void _addPossibleCondition(StringBuffer buffer, dynamic condition) {
-    if (condition == null) return;
-
-    String conditionText;
-    if (condition is String) {
-      conditionText = condition;
-    } else if (condition is Map && condition.values.isNotEmpty) {
-      conditionText =
-          condition.values.first?.toString() ?? 'Educational observation';
-    } else {
-      return;
-    }
-    buffer.writeln("**Possible Condition:** $conditionText\n");
-  }
-
-  /// Add a list field to the analysis message
-  void _addListField(StringBuffer buffer, String label, dynamic listData) {
-    if (listData is List && listData.isNotEmpty) {
-      buffer.writeln("**$label:**");
-      for (final item in listData) {
-        buffer.writeln("• $item");
-      }
-      buffer.writeln();
-    }
-  }
 
   /// Send user message to AI service
   Future<void> _sendMessage() async {
@@ -339,566 +451,84 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     final fontSize = _getResponsiveFontSize(screenWidth);
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: EyeHealthAppbar(),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_hasPhotos) ...[
-                    _buildPhotoSection(),
-                    const SizedBox(height: 24),
-                  ],
-                  if (_isProcessing) _buildLoadingIndicator(),
-                  if (_messages.isNotEmpty) _buildChatMessages(fontSize),
-                ],
-              ),
-            ),
-          ),
-          _buildMessageInput(),
-        ],
-      ),
-    );
-  }
-
-  /// Build photo display section
-  Widget _buildPhotoSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildPhotoHeader(),
-        const SizedBox(height: 12),
-        _buildPhotoDisplay(),
-      ],
-    );
-  }
-
-  /// Build photo section header
-  Widget _buildPhotoHeader() {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Colors.green[900],
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: const Icon(
-            Icons.person,
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        leading:
+            widget.showBackButton
+                ? IconButton(
+                  icon: const Icon(Icons.chevron_left, size: 32),
+                  onPressed: () => Navigator.pop(context),
+                )
+                : null,
+        automaticallyImplyLeading: false,
+        title: const Text(
+          'Eye Health Assistant',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
             color: Colors.white,
-            size: _avatarSize,
           ),
         ),
-        const SizedBox(width: 8),
-        const Text(
-          _fundusPhotoTakenText,
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-        ),
-      ],
-    );
-  }
-
-  /// Build photo display widget
-  Widget _buildPhotoDisplay() {
-    if (widget.photos?.length == 1) {
-      return _buildSinglePhotoDisplay();
-    } else {
-      return _buildMultiplePhotosDisplay();
-    }
-  }
-
-  /// Build single photo display
-  Widget _buildSinglePhotoDisplay() {
-    return Align(
-      alignment: Alignment.topRight,
-      child: Container(
-        width: _photoDisplaySize,
-        height: _photoDisplaySize,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.grey.shade300, width: 2),
-        ),
-        padding: const EdgeInsets.all(8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Image.file(File(widget.photos!.first.path), fit: BoxFit.cover),
-        ),
+        titleSpacing: widget.showBackButton ? 0 : 16,
+        centerTitle: false,
       ),
-    );
-  }
-
-  /// Build multiple photos display
-  Widget _buildMultiplePhotosDisplay() {
-    return SizedBox(
-      height: 120,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: widget.photos?.length ?? 0,
-        itemBuilder: (context, index) => _buildPhotoItem(index),
-      ),
-    );
-  }
-
-  /// Build individual photo item for multiple photos
-  Widget _buildPhotoItem(int index) {
-    final isLastItem = index == (widget.photos?.length ?? 0) - 1;
-
-    return Container(
-      margin: EdgeInsets.only(right: isLastItem ? 0 : 12),
-      child: Column(
-        children: [
-          _buildPhotoThumbnail(index),
-          const SizedBox(height: 8),
-          _buildPhotoLabel(index),
-        ],
-      ),
-    );
-  }
-
-  /// Build photo thumbnail
-  Widget _buildPhotoThumbnail(int index) {
-    return Container(
-      width: _multiplePhotoSize,
-      height: _multiplePhotoSize,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: Colors.teal, width: 2),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(38),
-        child: Stack(
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Column(
           children: [
-            Image.file(
-              File(widget.photos![index].path),
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-            ),
-            _buildPhotoNumberOverlay(index),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build photo number overlay
-  Widget _buildPhotoNumberOverlay(int index) {
-    return Positioned(
-      top: 4,
-      right: 4,
-      child: Container(
-        width: 20,
-        height: 20,
-        decoration: BoxDecoration(
-          color: Colors.teal,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 1),
-        ),
-        child: Center(
-          child: Text(
-            '${index + 1}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Build photo label
-  Widget _buildPhotoLabel(int index) {
-    return Text(
-      'Photo ${index + 1}',
-      style: TextStyle(
-        fontSize: 12,
-        color: Colors.grey.shade600,
-        fontWeight: FontWeight.w500,
-      ),
-    );
-  }
-
-  /// Build loading indicator
-  Widget _buildLoadingIndicator() {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(32),
-        child: CircularProgressIndicator(color: Colors.teal),
-      ),
-    );
-  }
-
-  /// Build chat messages list
-  Widget _buildChatMessages(double fontSize) {
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _messages.length + (_isSendingMessage ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == _messages.length && _isSendingMessage) {
-          return _buildTypingIndicator();
-        }
-        return _buildChatMessageItem(index, fontSize);
-      },
-    );
-  }
-
-  /// Build typing indicator
-  Widget _buildTypingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildAIAvatar(),
-          const SizedBox(width: 8),
-          _buildTypingBubble(),
-        ],
-      ),
-    );
-  }
-
-  /// Build typing bubble
-  Widget _buildTypingBubble() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(18),
-          topRight: Radius.circular(18),
-          bottomLeft: Radius.circular(4),
-          bottomRight: Radius.circular(18),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            _aiThinkingText,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade600,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          const SizedBox(width: 8),
-          const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              color: Colors.teal,
-              strokeWidth: 2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build individual chat message item
-  Widget _buildChatMessageItem(int index, double fontSize) {
-    final message = _messages[index];
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          if (!message.isUser) ...[_buildAIAvatar(), const SizedBox(width: 8)],
-          ChatBubble(
-            message: message,
-            index: index,
-            hasImage: _hasPhotos,
-            fontSize: fontSize,
-            maxLines: _maxChatBubbleLines,
-            maxWidthRatio: _maxMessageWidthRatio,
-          ),
-          if (message.isUser) ...[const SizedBox(width: 8), _buildUserAvatar()],
-        ],
-      ),
-    );
-  }
-
-  /// Build AI avatar
-  Widget _buildAIAvatar() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.green[900],
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: ClipOval(
-        child: Image.asset(
-          'assets/icons/launcher_icon.png',
-          width: _avatarSize,
-          height: _avatarSize,
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
-  }
-
-  /// Build user avatar
-  Widget _buildUserAvatar() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.blue,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: const Icon(Icons.person, color: Colors.white, size: 24),
-    );
-  }
-
-  /// Build message input section
-  Widget _buildMessageInput() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Row(
-          children: [
-            Expanded(child: _buildTextInput()),
-            const SizedBox(width: 12),
-            _buildSendButton(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build text input field
-  Widget _buildTextInput() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: TextField(
-        controller: _messageController,
-        enabled: !_isProcessing,
-        decoration: InputDecoration(
-          hintText: _getHintText(),
-          hintStyle: TextStyle(color: Colors.grey.shade500),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 12,
-          ),
-        ),
-        onSubmitted: (_) => _isProcessing ? null : _sendMessage(),
-        maxLines: null,
-        textCapitalization: TextCapitalization.sentences,
-      ),
-    );
-  }
-
-  /// Build send button
-  Widget _buildSendButton() {
-    final isDisabled = _isSendingMessage || _isProcessing;
-
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: isDisabled ? Colors.grey : Colors.teal,
-        shape: BoxShape.circle,
-      ),
-      child:
-          isDisabled
-              ? const Padding(
-                padding: EdgeInsets.all(12.0),
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_messages.isNotEmpty)
+                      ChatThread(
+                        messages: _messages,
+                        isSending: _isSendingMessage,
+                        hasPhotos: _hasPhotos,
+                        fontSize: fontSize,
+                        thinkingText: _aiThinkingText,
+                        maxLines: _maxChatBubbleLines,
+                        maxWidthRatio: _maxMessageWidthRatio,
+                        avatarSize: _avatarSize,
+                      ),
+                    if (_isProcessing) const _ScreeningProgress(),
+                  ],
                 ),
-              )
-              : IconButton(
-                onPressed: isDisabled ? null : _sendMessage,
-                icon: const Icon(Icons.send, color: Colors.white, size: 20),
               ),
-    );
-  }
-}
-
-/// Data model for chat messages
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  final DateTime timestamp;
-
-  const ChatMessage({
-    required this.text,
-    required this.isUser,
-    required this.timestamp,
-  });
-
-  Map<String, dynamic> toMap() {
-    return {'text': text, 'isUser': isUser, 'timestamp': timestamp};
-  }
-}
-
-/// Reusable chat bubble widget with expand/collapse functionality
-class ChatBubble extends StatefulWidget {
-  final ChatMessage message;
-  final int index;
-  final bool hasImage;
-  final double fontSize;
-  final int maxLines;
-  final double maxWidthRatio;
-
-  const ChatBubble({
-    super.key,
-    required this.message,
-    required this.index,
-    required this.hasImage,
-    this.fontSize = 14.0,
-    this.maxLines = 4,
-    this.maxWidthRatio = 0.75,
-  });
-
-  @override
-  State<ChatBubble> createState() => _ChatBubbleState();
-}
-
-class _ChatBubbleState extends State<ChatBubble> {
-  bool isExpanded = false;
-  bool needsExpansion = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkIfExpansionNeeded();
-    });
-  }
-
-  /// Check if text needs expansion toggle
-  void _checkIfExpansionNeeded() {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: widget.message.text,
-        style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+            ChatComposer(
+              controller: _messageController,
+              hintText: _getHintText(),
+              inputEnabled: !_isProcessing,
+              sendEnabled: !_isSendingMessage && !_isProcessing,
+              attachEnabled:
+                  !_isProcessing && !_isSendingMessage && !_isPickingMore,
+              isAttaching: _isPickingMore,
+              isTab: !widget.showBackButton,
+              onSend: _sendMessage,
+              onAttach: _uploadMorePhotos,
+            ),
+          ],
+        ),
       ),
-      maxLines: widget.maxLines,
-      textDirection: TextDirection.ltr,
     );
-
-    final maxWidth =
-        MediaQuery.of(context).size.width * widget.maxWidthRatio - 32;
-    textPainter.layout(maxWidth: maxWidth);
-
-    if (mounted) {
-      setState(() {
-        needsExpansion = textPainter.didExceedMaxLines;
-      });
-    }
   }
 
-  /// Toggle expansion state
-  void _toggleExpansion() {
-    setState(() => isExpanded = !isExpanded);
-  }
+}
 
-  /// Check if this is the first AI message with image
-  bool get _shouldShowReportHeader =>
-      widget.index == 0 && !widget.message.isUser && widget.hasImage;
+class _ScreeningProgress extends StatelessWidget {
+  const _ScreeningProgress();
 
   @override
   Widget build(BuildContext context) {
-    return Flexible(
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * widget.maxWidthRatio,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: widget.message.isUser ? Colors.teal : Colors.grey.shade200,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(widget.message.isUser ? 18 : 4),
-            bottomRight: Radius.circular(widget.message.isUser ? 4 : 18),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_shouldShowReportHeader) _buildReportHeader(),
-            _buildMessageText(),
-            if (needsExpansion) _buildExpandToggle(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build report header for analysis results
-  Widget _buildReportHeader() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2.0),
-      child: Text(
-        'Fundus exam report:',
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: widget.message.isUser ? Colors.white : Colors.black87,
-        ),
-      ),
-    );
-  }
-
-  /// Build message text
-  Widget _buildMessageText() {
-    return Text(
-      widget.message.text,
-      style: TextStyle(
-        fontSize: widget.fontSize,
-        height: 1.4,
-        color: widget.message.isUser ? Colors.white : Colors.black87,
-      ),
-      maxLines: isExpanded ? null : widget.maxLines,
-      overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
-    );
-  }
-
-  /// Build expand/collapse toggle
-  Widget _buildExpandToggle() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: InkWell(
-        onTap: _toggleExpansion,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 6.0),
-          child: Text(
-            isExpanded ? 'Read less' : 'more',
-            style: TextStyle(
-              color: widget.message.isUser ? Colors.white70 : Colors.blue,
-              fontSize: 12,
-            ),
-          ),
-        ),
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
   }
