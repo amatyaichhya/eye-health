@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:eye_health/services/health_statistics_store.dart';
 import 'package:eye_health/services/hf_service.dart';
 import 'package:eye_health/services/screening_service.dart';
 import 'package:eye_health/theme/app_theme.dart';
@@ -76,9 +77,10 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Initialize screen based on whether photos are provided
-  void _initializeScreen() {
+  Future<void> _initializeScreen() async {
     if (_hasPhotos) {
-      _addUserPhotoMessage(_photos);
+      await _addUserPhotoMessage(_photos);
+      if (!mounted) return;
       _startProcessing();
     } else {
       _addInitialGreeting();
@@ -153,8 +155,16 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Add a right-aligned user message with fundus photo thumbnails.
-  void _addUserPhotoMessage(List<XFile> photos) {
+  /// Copies each photo into personal health statistics.
+  Future<void> _addUserPhotoMessage(List<XFile> photos) async {
     if (photos.isEmpty) return;
+    final savedPaths = <String>[];
+    for (final photo in photos) {
+      final saved = await HealthStatisticsStore.saveChatImage(photo);
+      savedPaths.add(saved.imagePath);
+    }
+    if (!mounted) return;
+
     final countLabel =
         photos.length == 1
             ? _fundusPhotoTakenText
@@ -165,7 +175,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
           text: countLabel,
           isUser: true,
           timestamp: DateTime.now(),
-          imagePaths: photos.map((p) => p.path).toList(),
+          imagePaths: savedPaths,
         ),
       );
     });
@@ -236,7 +246,8 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       final newPhotos =
           picked.take(remaining).map((x) => XFile(x.path)).toList();
       setState(() => _photos.addAll(newPhotos));
-      _addUserPhotoMessage(newPhotos);
+      await _addUserPhotoMessage(newPhotos);
+      if (!mounted) return;
       await _startProcessing(onlyPhotos: newPhotos);
     } catch (e) {
       colorPrint('Chat upload more error: $e');
@@ -316,10 +327,10 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Add formatted analysis results message to chat
-  void _addAnalysisCompleteMessage({
+  Future<void> _addAnalysisCompleteMessage({
     List<XFile>? screenedPhotos,
     Map<String, dynamic>? batchResult,
-  }) {
+  }) async {
     if (!_isAnalysisSuccessful) return;
 
     final photosForAttach = screenedPhotos ?? _photos;
@@ -333,12 +344,28 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
           reports[i]['local_path'] = photosForAttach[i].path;
           reports[i]['filename'] ??= photosForAttach[i].name;
         }
+        final sourcePath = reports[i]['local_path']?.toString();
+        if (sourcePath != null) {
+          final savedPath = await HealthStatisticsStore.savedPathFor(sourcePath);
+          if (savedPath != null) reports[i]['local_path'] = savedPath;
+          await HealthStatisticsStore.updateScreening(
+            sourcePath: sourcePath,
+            drLabel: _labelOf(reports[i]['diabetic_retinopathy']),
+            glaucomaLabel: _labelOf(reports[i]['glaucoma']),
+          );
+        }
       }
+      if (!mounted) return;
       _addScreeningReports(reports);
       return;
     }
 
     _addAIMessage(_closingMessage);
+  }
+
+  String? _labelOf(dynamic section) {
+    if (section is Map) return section['label']?.toString();
+    return null;
   }
 
   /// Check if analysis was successful

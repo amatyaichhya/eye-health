@@ -64,14 +64,16 @@ class HfService {
 
       return _processChatResponse(response);
     } catch (e) {
-      colorPrint('Error in OpenRouter chat: $e');
-      final errorText = e.toString().replaceFirst('Exception: ', '');
+      final message = _userFacingChatError(
+        e.toString(),
+        userMessage,
+        analysisContext != null,
+      );
+      colorPrint('Error in OpenRouter chat: $message');
       return {
         'success': false,
-        'error': errorText,
-        'message': errorText.startsWith('OpenRouter')
-            ? errorText
-            : _getFallbackResponse(userMessage, analysisContext != null),
+        'error': message,
+        'message': message,
       };
     }
   }
@@ -247,11 +249,10 @@ class HfService {
         'usage': responseData['usage'],
       };
     } else {
-      final errorMessage = _openRouterErrorMessage(response);
-      colorPrint(
-        'OpenRouter chat error - Status: ${response.statusCode} - $errorMessage',
+      colorPrint('OpenRouter chat error - Status: ${response.statusCode}');
+      throw Exception(
+        'OpenRouter chat error ${response.statusCode}: ${_openRouterErrorMessage(response)}',
       );
-      throw Exception('OpenRouter chat error: $errorMessage');
     }
   }
 
@@ -383,6 +384,28 @@ Remember: Always emphasize that this is educational information and professional
 ''';
 
     return basePrompt;
+  }
+
+  static const String _busyMessage =
+      'The AI is busy right now. Please try again in a moment.';
+
+  /// Friendly text for a failed reply to something the user typed.
+  /// Screening results are produced locally and do not use this path.
+  static String _userFacingChatError(
+    String error,
+    String userMessage,
+    bool hasAnalysis,
+  ) {
+    final text = error.toLowerCase();
+    final isBusy =
+        text.contains('503') ||
+        text.contains('429') ||
+        text.contains('unavailable') ||
+        text.contains('high demand') ||
+        text.contains('rate-limited') ||
+        text.contains('rate limit');
+    if (isBusy) return _busyMessage;
+    return _getFallbackResponse(userMessage, hasAnalysis);
   }
 
   /// Provides fallback responses when API fails
