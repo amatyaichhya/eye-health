@@ -4,9 +4,11 @@ import 'package:camera/camera.dart';
 import 'package:eye_health/services/hf_service.dart';
 import 'package:eye_health/services/screening_service.dart';
 import 'package:eye_health/theme/app_theme.dart';
+import 'package:eye_health/utils/utility_methods/app_toast.dart';
 import 'package:eye_health/utils/utility_methods/color_print.dart';
 import 'package:eye_health/widgets/screening_report_card.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart' as img_picker;
 
 /// Screen for processing fundus photos and providing AI-powered eye health analysis
 /// Supports both image analysis and interactive chat consultation
@@ -28,8 +30,10 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   // State variables
   bool _isProcessing = false;
   bool _isSendingMessage = false;
+  bool _isPickingMore = false;
   Map<String, dynamic>? _analysisResult;
   String? _errorMessage;
+  late List<XFile> _photos;
   final List<ChatMessage> _messages = [];
 
   // Controllers
@@ -42,8 +46,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   static const int _maxChatBubbleLines = 4;
   static const double _maxMessageWidthRatio = 0.75;
   static const double _avatarSize = 30.0;
-  static const double _photoDisplaySize = 180.0;
-  static const double _multiplePhotoSize = 80.0;
+  static const int _maxPhotos = 5;
 
   // Text Constants
 
@@ -61,6 +64,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   @override
   void initState() {
     super.initState();
+    _photos = List<XFile>.from(widget.photos ?? const <XFile>[]);
     _initializeScreen();
   }
 
@@ -74,6 +78,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   /// Initialize screen based on whether photos are provided
   void _initializeScreen() {
     if (_hasPhotos) {
+      _addUserPhotoMessage(_photos);
       _startProcessing();
     } else {
       _addInitialGreeting();
@@ -81,7 +86,7 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Check if photos are available
-  bool get _hasPhotos => widget.photos?.isNotEmpty ?? false;
+  bool get _hasPhotos => _photos.isNotEmpty;
 
   /// Scroll to bottom of chat with animation
   void _scrollToBottom() {
@@ -147,6 +152,26 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
     _scrollToBottom();
   }
 
+  /// Add a right-aligned user message with fundus photo thumbnails.
+  void _addUserPhotoMessage(List<XFile> photos) {
+    if (photos.isEmpty) return;
+    final countLabel =
+        photos.length == 1
+            ? _fundusPhotoTakenText
+            : 'Fundus photos taken (${photos.length}):';
+    setState(() {
+      _messages.add(
+        ChatMessage(
+          text: countLabel,
+          isUser: true,
+          timestamp: DateTime.now(),
+          imagePaths: photos.map((p) => p.path).toList(),
+        ),
+      );
+    });
+    _scrollToBottom();
+  }
+
   /// Get appropriate hint text for message input
   String _getHintText() {
     if (_analysisResult != null) {
@@ -159,8 +184,9 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Start photo processing workflow (local screening models)
-  Future<void> _startProcessing() async {
-    if (!_hasPhotos) return;
+  Future<void> _startProcessing({List<XFile>? onlyPhotos}) async {
+    final toScreen = onlyPhotos ?? _photos;
+    if (toScreen.isEmpty) return;
 
     _setProcessingState(true);
 
@@ -170,10 +196,10 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
         return;
       }
 
-      final result = await ScreeningService.screenImages(widget.photos!);
+      final result = await ScreeningService.screenImages(toScreen);
       colorPrint('Screening response: $result');
       if (result['success'] == true) {
-        _handleProcessingSuccess(result);
+        _handleProcessingSuccess(result, screenedPhotos: toScreen);
       } else {
         final error =
             result['error']?.toString() ??
@@ -182,6 +208,47 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       }
     } catch (e) {
       _handleProcessingError('$_analysisFailedPrefix${e.toString()}');
+    }
+  }
+
+  /// Pick additional fundus photos from chat and screen them.
+  Future<void> _uploadMorePhotos() async {
+    if (_isProcessing || _isSendingMessage || _isPickingMore) return;
+
+    final remaining = _maxPhotos - _photos.length;
+    if (remaining <= 0) {
+      showAppToast(
+        context,
+        'Maximum $_maxPhotos photos already added',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    setState(() => _isPickingMore = true);
+    try {
+      final picked = await img_picker.ImagePicker().pickMultiImage(
+        imageQuality: 80,
+        limit: remaining,
+      );
+      if (!mounted || picked.isEmpty) return;
+
+      final newPhotos =
+          picked.take(remaining).map((x) => XFile(x.path)).toList();
+      setState(() => _photos.addAll(newPhotos));
+      _addUserPhotoMessage(newPhotos);
+      await _startProcessing(onlyPhotos: newPhotos);
+    } catch (e) {
+      colorPrint('Chat upload more error: $e');
+      if (mounted) {
+        showAppToast(
+          context,
+          'Could not open the photo picker. Please try again.',
+          type: AppToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isPickingMore = false);
     }
   }
 
@@ -196,20 +263,46 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Handle successful processing result
-  void _handleProcessingSuccess(Map<String, dynamic> result) {
+  void _handleProcessingSuccess(
+    Map<String, dynamic> result, {
+    List<XFile>? screenedPhotos,
+  }) {
     if (!mounted) return;
 
     setState(() {
-      _analysisResult = result;
+      _analysisResult = _mergeAnalysisResults(result);
       _isProcessing = false;
     });
 
     // Add analysis message after delay
     Future.delayed(_messageDelayDuration, () {
       if (mounted) {
-        _addAnalysisCompleteMessage();
+        _addAnalysisCompleteMessage(
+          screenedPhotos: screenedPhotos,
+          batchResult: result,
+        );
       }
     });
+  }
+
+  /// Merge new screening results into existing analysis context for chat.
+  Map<String, dynamic> _mergeAnalysisResults(Map<String, dynamic> incoming) {
+    final existing = _analysisResult;
+    if (existing == null || existing['success'] != true) {
+      return incoming;
+    }
+
+    final merged = List<Map<String, dynamic>>.from(
+      ScreeningService.extractResults(existing),
+    );
+    merged.addAll(ScreeningService.extractResults(incoming));
+
+    return {
+      'success': true,
+      'source': 'local_screening',
+      'results': merged,
+      if (merged.isNotEmpty) 'primary': merged.first,
+    };
   }
 
   /// Handle processing error
@@ -223,18 +316,22 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
   }
 
   /// Add formatted analysis results message to chat
-  void _addAnalysisCompleteMessage() {
+  void _addAnalysisCompleteMessage({
+    List<XFile>? screenedPhotos,
+    Map<String, dynamic>? batchResult,
+  }) {
     if (!_isAnalysisSuccessful) return;
 
-    final reports = ScreeningService.extractResults(_analysisResult!);
+    final photosForAttach = screenedPhotos ?? _photos;
+    final reports = ScreeningService.extractResults(
+      batchResult ?? _analysisResult!,
+    );
+
     if (reports.isNotEmpty) {
-      // Attach local paths from the uploaded photos if the API omitted them.
       for (var i = 0; i < reports.length; i++) {
-        if (reports[i]['local_path'] == null &&
-            widget.photos != null &&
-            i < widget.photos!.length) {
-          reports[i]['local_path'] = widget.photos![i].path;
-          reports[i]['filename'] ??= widget.photos![i].name;
+        if (reports[i]['local_path'] == null && i < photosForAttach.length) {
+          reports[i]['local_path'] = photosForAttach[i].path;
+          reports[i]['filename'] ??= photosForAttach[i].name;
         }
       }
       _addScreeningReports(reports);
@@ -360,12 +457,8 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_hasPhotos) ...[
-                      _buildPhotoSection(),
-                      const SizedBox(height: 24),
-                    ],
-                    if (_isProcessing) _buildLoadingIndicator(),
                     if (_messages.isNotEmpty) _buildChatMessages(fontSize),
+                    if (_isProcessing) _buildLoadingIndicator(),
                   ],
                 ),
               ),
@@ -373,172 +466,6 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
             _buildMessageInput(),
           ],
         ),
-      ),
-    );
-  }
-
-  /// Build photo display section
-  Widget _buildPhotoSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildPhotoHeader(),
-        const SizedBox(height: 12),
-        _buildPhotoDisplay(),
-      ],
-    );
-  }
-
-  /// Build photo section header
-  Widget _buildPhotoHeader() {
-    return const Row(
-      children: [
-        Icon(Icons.image_outlined, color: AppColors.primaryDark, size: 22),
-        SizedBox(width: 8),
-        Text(
-          _fundusPhotoTakenText,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Build photo display widget
-  Widget _buildPhotoDisplay() {
-    if (widget.photos?.length == 1) {
-      return _buildSinglePhotoDisplay();
-    } else {
-      return _buildMultiplePhotosDisplay();
-    }
-  }
-
-  /// Build single photo display
-  Widget _buildSinglePhotoDisplay() {
-    return Align(
-      alignment: Alignment.topRight,
-      child: Container(
-        width: _photoDisplaySize,
-        height: _photoDisplaySize,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.grey.shade300, width: 2),
-        ),
-        padding: const EdgeInsets.all(8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Image.file(File(widget.photos!.first.path), fit: BoxFit.cover),
-        ),
-      ),
-    );
-  }
-
-  /// Build multiple photos display
-  Widget _buildMultiplePhotosDisplay() {
-    return SizedBox(
-      height: 124,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(top: 6, right: 6),
-        clipBehavior: Clip.none,
-        itemCount: widget.photos?.length ?? 0,
-        itemBuilder: (context, index) => _buildPhotoItem(index),
-      ),
-    );
-  }
-
-  /// Build individual photo item for multiple photos
-  Widget _buildPhotoItem(int index) {
-    final isLastItem = index == (widget.photos?.length ?? 0) - 1;
-
-    return Container(
-      margin: EdgeInsets.only(right: isLastItem ? 0 : 12),
-      child: Column(
-        children: [
-          _buildPhotoThumbnail(index),
-          const SizedBox(height: 8),
-          _buildPhotoLabel(index),
-        ],
-      ),
-    );
-  }
-
-  /// Build photo thumbnail
-  Widget _buildPhotoThumbnail(int index) {
-    return SizedBox(
-      width: _multiplePhotoSize,
-      height: _multiplePhotoSize,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: _multiplePhotoSize,
-            height: _multiplePhotoSize,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(40),
-              border: Border.all(color: AppColors.primary, width: 2),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(38),
-              child: Image.file(
-                File(widget.photos![index].path),
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-              ),
-            ),
-          ),
-          _buildPhotoNumberBadge(index),
-        ],
-      ),
-    );
-  }
-
-  /// Floating notification-style number badge
-  Widget _buildPhotoNumberBadge(int index) {
-    return Positioned(
-      top: 2,
-      right: -4,
-      child: Container(
-        width: 22,
-        height: 22,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 1.5),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x33000000),
-              blurRadius: 4,
-              offset: Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Text(
-          '${index + 1}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            height: 1,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Build photo label
-  Widget _buildPhotoLabel(int index) {
-    return Text(
-      'Photo ${index + 1}',
-      style: TextStyle(
-        fontSize: 12,
-        color: Colors.grey.shade600,
-        fontWeight: FontWeight.w500,
       ),
     );
   }
@@ -651,6 +578,23 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
       );
     }
 
+    if (message.isUserPhotoUpload) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Flexible(
+              child: _buildUserPhotoBubble(message, fontSize),
+            ),
+            const SizedBox(width: 8),
+            _buildUserAvatar(),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -668,6 +612,59 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
             maxWidthRatio: _maxMessageWidthRatio,
           ),
           if (message.isUser) ...[const SizedBox(width: 8), _buildUserAvatar()],
+        ],
+      ),
+    );
+  }
+
+  /// Right-aligned user bubble for uploaded fundus photos (assistant-like style).
+  Widget _buildUserPhotoBubble(ChatMessage message, double fontSize) {
+    final paths = message.imagePaths ?? const <String>[];
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * _maxMessageWidthRatio,
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(18),
+          topRight: Radius.circular(18),
+          bottomLeft: Radius.circular(18),
+          bottomRight: Radius.circular(4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message.text,
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+              height: 1.3,
+            ),
+          ),
+          if (paths.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final path in paths)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      File(path),
+                      width: paths.length == 1 ? 140 : 72,
+                      height: paths.length == 1 ? 140 : 72,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -741,6 +738,8 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
           padding: EdgeInsets.only(bottom: isTab ? 72 : 0),
           child: Row(
             children: [
+              _buildAttachButton(),
+              const SizedBox(width: 8),
               Expanded(child: _buildTextInput()),
               const SizedBox(width: 12),
               _buildSendButton(),
@@ -775,6 +774,40 @@ class _PhotoProcessingScreenState extends State<PhotoProcessingScreen> {
         maxLines: null,
         textCapitalization: TextCapitalization.sentences,
       ),
+    );
+  }
+
+  /// Plus button to upload more fundus photos from chat.
+  Widget _buildAttachButton() {
+    final isDisabled =
+        _isProcessing || _isSendingMessage || _isPickingMore;
+
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: isDisabled ? Colors.grey.shade300 : AppColors.primarySoft,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child:
+          _isPickingMore
+              ? const Padding(
+                padding: EdgeInsets.all(10),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                ),
+              )
+              : IconButton(
+                onPressed: isDisabled ? null : _uploadMorePhotos,
+                tooltip: 'Upload fundus photos',
+                icon: Icon(
+                  Icons.add,
+                  color: isDisabled ? Colors.grey : AppColors.primaryDark,
+                  size: 22,
+                ),
+              ),
     );
   }
 
@@ -813,6 +846,7 @@ class ChatMessage {
   final DateTime timestamp;
   final Map<String, dynamic>? screeningResult;
   final String? imagePath;
+  final List<String>? imagePaths;
 
   const ChatMessage({
     required this.text,
@@ -820,9 +854,12 @@ class ChatMessage {
     required this.timestamp,
     this.screeningResult,
     this.imagePath,
+    this.imagePaths,
   });
 
   bool get isScreeningReport => screeningResult != null;
+  bool get isUserPhotoUpload =>
+      isUser && imagePaths != null && imagePaths!.isNotEmpty;
 
   Map<String, dynamic> toMap() {
     return {'text': text, 'isUser': isUser, 'timestamp': timestamp};
@@ -900,7 +937,7 @@ class _ChatBubbleState extends State<ChatBubble> {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: widget.message.isUser ? AppColors.primary : Colors.grey.shade200,
+          color: widget.message.isUser ? Colors.white : Colors.grey.shade200,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -926,7 +963,7 @@ class _ChatBubbleState extends State<ChatBubble> {
       style: TextStyle(
         fontSize: widget.fontSize,
         height: 1.4,
-        color: widget.message.isUser ? Colors.white : Colors.black87,
+        color: Colors.black87,
       ),
       maxLines: isExpanded ? null : widget.maxLines,
       overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
@@ -944,7 +981,7 @@ class _ChatBubbleState extends State<ChatBubble> {
           child: Text(
             isExpanded ? 'Read less' : 'more',
             style: TextStyle(
-              color: widget.message.isUser ? Colors.white70 : Colors.blue,
+              color: Colors.grey.shade700,
               fontSize: 12,
             ),
           ),

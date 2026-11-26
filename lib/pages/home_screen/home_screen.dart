@@ -2,10 +2,12 @@ import 'package:eye_health/pages/image_picker_screen/image_picker_screen.dart';
 import 'package:eye_health/pages/image_processing_screen/image_processing_screen.dart';
 import 'package:eye_health/pages/statistics_screen/statistics_screen.dart';
 import 'package:eye_health/theme/app_theme.dart';
+import 'package:eye_health/utils/utility_methods/app_toast.dart';
 import 'package:eye_health/utils/utility_methods/color_print.dart';
 import 'package:eye_health/widgets/app_card.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,24 +18,21 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static const String _appTitle = 'EYEHEALTH';
+  static const int _maxUploadPhotos = 5;
+
+  bool _isPickingUpload = false;
 
   List<_MenuItem> _getMenuItems() {
     return [
       _MenuItem(
         icon: Icons.camera_alt,
         text: 'Take a Fundus Photo',
-        onTap: () => _navigateToImagePicker(
-          'Take a Fundus Photo',
-          openGalleryOnStart: false,
-        ),
+        onTap: () => _navigateToCapture(),
       ),
       _MenuItem(
         icon: Icons.upload,
         text: 'Upload a Fundus Photo',
-        onTap: () => _navigateToImagePicker(
-          'Upload a Fundus Photo',
-          openGalleryOnStart: true,
-        ),
+        onTap: _uploadFundusPhotos,
       ),
       _MenuItem(
         icon: Icons.bar_chart,
@@ -58,23 +57,60 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
   }
 
-  void _navigateToImagePicker(
-    String buttonName, {
-    required bool openGalleryOnStart,
-  }) {
+  void _navigateToCapture() {
     if (kDebugMode) {
-      colorPrint('$buttonName button pressed - Navigating to Image Picker');
+      colorPrint('Take a Fundus Photo - Navigating to capture screen');
     }
     Navigator.push(
       context,
       MaterialPageRoute(
         builder:
-            (context) => ImagePickerScreen(
-              openGalleryOnStart: openGalleryOnStart,
-              maxPhotos: 5,
+            (context) => const ImagePickerScreen(
+              openGalleryOnStart: false,
+              maxPhotos: _maxUploadPhotos,
             ),
       ),
     );
+  }
+
+  /// Opens the system multi-image picker directly (skips the capture screen).
+  /// On iOS the picker is presented full screen (see AppDelegate).
+  Future<void> _uploadFundusPhotos() async {
+    if (_isPickingUpload) return;
+
+    setState(() => _isPickingUpload = true);
+    if (kDebugMode) {
+      colorPrint('Upload a Fundus Photo - Opening full-screen image picker');
+    }
+
+    try {
+      final images = await ImagePicker().pickMultiImage(
+        imageQuality: 80,
+        limit: _maxUploadPhotos,
+      );
+
+      if (!mounted || images.isEmpty) return;
+
+      final photos = images.take(_maxUploadPhotos).toList();
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PhotoProcessingScreen(photos: photos),
+        ),
+      );
+    } catch (e) {
+      colorPrint('Upload picker error: $e');
+      if (mounted) {
+        showAppToast(
+          context,
+          'Could not open the photo picker. Please try again.',
+          type: AppToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPickingUpload = false);
+      }
+    }
   }
 
   void _navigateToScreen({required String buttonName, required Widget screen}) {

@@ -7,7 +7,7 @@ import 'package:eye_health/utils/utility_methods/color_print.dart';
 import 'package:eye_health/utils/utility_methods/image_converter.dart';
 import 'package:http/http.dart' as http;
 
-/// Service for handling HuggingFace API interactions for image analysis and chat
+/// Service for handling OpenRouter API interactions for image analysis and chat
 class HfService {
   // Constants for better maintainability
   static const Duration _apiTimeout = Duration(seconds: 30);
@@ -21,7 +21,7 @@ class HfService {
   static const String _jsonMarkdownPrefix = '```json';
   static const String _jsonMarkdownSuffix = '```';
 
-  /// Analyzes fundus images for educational purposes using HuggingFace Vision API
+  /// Analyzes fundus images for educational purposes using OpenRouter Vision API
   static Future<Map<String, dynamic>> analyzeFungalInfection(
     List<XFile> images,
   ) async {
@@ -29,7 +29,7 @@ class HfService {
       _validateApiConfiguration();
 
       colorPrint(
-        'Starting HuggingFace analysis for ${images.length} images...',
+        'Starting OpenRouter analysis for ${images.length} images...',
       );
 
       final imageContents = await _convertImagesToBase64(images);
@@ -38,7 +38,7 @@ class HfService {
 
       return _processAnalysisResponse(response);
     } catch (e) {
-      colorPrint('Error in HuggingFace analysis: $e');
+      colorPrint('Error in OpenRouter analysis: $e');
       return _buildErrorResponse(e.toString());
     }
   }
@@ -52,7 +52,7 @@ class HfService {
     try {
       _validateApiConfiguration();
 
-      colorPrint('Starting HuggingFace chat request...');
+      colorPrint('Starting OpenRouter chat request...');
 
       final messages = _buildChatMessages(
         userMessage,
@@ -64,11 +64,14 @@ class HfService {
 
       return _processChatResponse(response);
     } catch (e) {
-      colorPrint('Error in HuggingFace chat: $e');
+      colorPrint('Error in OpenRouter chat: $e');
+      final errorText = e.toString().replaceFirst('Exception: ', '');
       return {
         'success': false,
-        'error': e.toString(),
-        'message': _getFallbackResponse(userMessage, analysisContext != null),
+        'error': errorText,
+        'message': errorText.startsWith('OpenRouter')
+            ? errorText
+            : _getFallbackResponse(userMessage, analysisContext != null),
       };
     }
   }
@@ -84,7 +87,7 @@ class HfService {
   static void _validateApiConfiguration() {
     if (!HfApiConfig.isApiKeyConfigured) {
       throw Exception(
-        'Hugging Face API key not configured. Please add your API key to lib/config/open_api_config.dart',
+        'OpenRouter API key not configured. Set OPENROUTER_API_KEY in config.dev.json.',
       );
     }
   }
@@ -115,7 +118,7 @@ class HfService {
     List<Map<String, dynamic>> imageContents,
   ) {
     return {
-      "model": HfApiConfig.hfModel,
+      "model": HfApiConfig.openRouterModel,
       "messages": [
         {
           "role": _userRole,
@@ -133,7 +136,7 @@ class HfService {
     List<Map<String, dynamic>> messages,
   ) {
     return {
-      "model": HfApiConfig.hfModel,
+      "model": HfApiConfig.openRouterModel,
       "messages": messages,
       "max_tokens": _maxTokens,
       "temperature": _chatTemperature,
@@ -164,23 +167,41 @@ class HfService {
     return messages;
   }
 
-  /// Makes HTTP request to HuggingFace API
+  /// Makes HTTP request to OpenRouter API
   static Future<http.Response> _makeApiRequest(
     Map<String, dynamic> requestBody,
   ) async {
-    colorPrint('Sending request to HuggingFace API...');
-    colorPrint('Model: ${HfApiConfig.hfModel}');
+    colorPrint('Sending request to OpenRouter...');
+    colorPrint('Endpoint: ${HfApiConfig.chatCompletionsEndpoint}');
+    colorPrint('Model: ${HfApiConfig.openRouterModel}');
 
-    return await http
-        .post(
-          Uri.parse(HfApiConfig.chatCompletionsEndpoint),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${HfApiConfig.hfApiKey}',
-          },
-          body: jsonEncode(requestBody),
-        )
-        .timeout(_apiTimeout);
+    const maxAttempts = 3;
+    http.Response? response;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      response = await http
+          .post(
+            Uri.parse(HfApiConfig.chatCompletionsEndpoint),
+            headers: {
+              'Authorization': 'Bearer ${HfApiConfig.openRouterApiKey}',
+              'HTTP-Referer': HfApiConfig.httpReferer,
+              'X-Title': HfApiConfig.appTitle,
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(requestBody),
+          )
+          .timeout(_apiTimeout);
+
+      if (response.statusCode != 429 || attempt == maxAttempts) {
+        return response;
+      }
+
+      colorPrint(
+        'OpenRouter rate limited the free model. Retrying ($attempt/$maxAttempts)...',
+      );
+      await Future.delayed(Duration(seconds: attempt * 2));
+    }
+
+    return response!;
   }
 
   /// Processes the API response for image analysis
@@ -191,7 +212,7 @@ class HfService {
       final responseData = jsonDecode(response.body);
       final content = responseData['choices'][0]['message']['content'];
 
-      colorPrint('HuggingFace analysis completed successfully');
+      colorPrint('OpenRouter analysis completed successfully');
 
       final analysisResult = _parseJsonResponse(content);
 
@@ -202,11 +223,11 @@ class HfService {
         'usage': responseData['usage'],
       };
     } else {
-      colorPrint('HuggingFace API Error - Status: ${response.statusCode}');
-      final errorData = jsonDecode(response.body);
-      throw Exception(
-        'HuggingFace API Error: ${errorData['error']['message']}',
+      final errorMessage = _openRouterErrorMessage(response);
+      colorPrint(
+        'OpenRouter API error - Status: ${response.statusCode} - $errorMessage',
       );
+      throw Exception('OpenRouter API error: $errorMessage');
     }
   }
 
@@ -226,18 +247,27 @@ class HfService {
         'usage': responseData['usage'],
       };
     } else {
-      colorPrint('HuggingFace Chat API Error - Status: ${response.statusCode}');
-
-      String errorMessage;
-      try {
-        final errorData = jsonDecode(response.body);
-        errorMessage = errorData['error']['message'] ?? 'Unknown API error';
-      } catch (e) {
-        errorMessage = 'API request failed with status ${response.statusCode}';
-      }
-
-      throw Exception('HuggingFace Chat API Error: $errorMessage');
+      final errorMessage = _openRouterErrorMessage(response);
+      colorPrint(
+        'OpenRouter chat error - Status: ${response.statusCode} - $errorMessage',
+      );
+      throw Exception('OpenRouter chat error: $errorMessage');
     }
+  }
+
+  /// Reads OpenRouter's error message, including the upstream provider detail.
+  static String _openRouterErrorMessage(http.Response response) {
+    try {
+      final errorData = jsonDecode(response.body);
+      final error = errorData['error'];
+      if (error is Map) {
+        final raw = error['metadata']?['raw'];
+        if (raw is String && raw.trim().isNotEmpty) return raw.trim();
+        final message = error['message'];
+        if (message is String && message.trim().isNotEmpty) return message.trim();
+      }
+    } catch (_) {}
+    return 'API request failed with status ${response.statusCode}';
   }
 
   /// Parses JSON response, handling markdown formatting
@@ -270,17 +300,17 @@ class HfService {
     return {
       'analysis': {
         'likelihood': 'Unable to assess - text response received',
-        'confidence': 'N/A - HuggingFace returned plain text',
-        'visual_indicators': ['HuggingFace declined to analyze the image'],
+        'confidence': 'N/A - OpenRouter returned plain text',
+        'visual_indicators': ['OpenRouter declined to analyze the image'],
         'possible_condition': 'Analysis not performed',
         'description': content,
         'recommendations': [
           'Consult a healthcare professional for proper diagnosis',
-          'This response indicates HuggingFace\'s safety guidelines prevented analysis',
+          'This response indicates OpenRouter\'s safety guidelines prevented analysis',
         ],
       },
       'note':
-          'HuggingFace returned plain text instead of JSON - likely due to safety guidelines',
+          'OpenRouter returned plain text instead of JSON - likely due to safety guidelines',
     };
   }
 
