@@ -17,11 +17,9 @@ Welcome to Eye Health, a [Flutter](https://docs.flutter.dev/) mobile application
 
 ## Demo
 
-Walkthrough video here.
+[Watch the walkthrough](https://canva.link/2tpdgmh9022qg8g)
 
-<!--
-[Watch the demo](docs/demo.mp4)
--->
+<img src="EyeHealthAssistantWalkthroughiniOSSimulator-ezgif.com-video-to-gif-converter.gif" alt="Eye Health assistant walkthrough in the iOS Simulator" width="210">
 
 ## Editor Setup
 
@@ -168,6 +166,11 @@ Development:
 flutter run --dart-define-from-file=config.dev.json
 ```
 
-Release builds pass the production config file the same way. See [README_API_SETUP.md](README_API_SETUP.md) for the Android and iOS release commands.
+Release builds use `config.prod.json`:
+
+```bash
+flutter build apk --release --dart-define-from-file=config.prod.json
+flutter build ios --release --dart-define-from-file=config.prod.json
+```
 
 Keep real keys in `config.dev.json` and `config.prod.json`. Commit only the `config.*.template.json` files.
