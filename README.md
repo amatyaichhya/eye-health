@@ -19,7 +19,7 @@ Welcome to Eye Health, a [Flutter](https://docs.flutter.dev/) mobile application
 
 [Watch the walkthrough](https://canva.link/2tpdgmh9022qg8g)
 
-<img src="EyeHealthAssistantWalkthroughiniOSSimulator-ezgif.com-video-to-gif-converter.gif" alt="Eye Health assistant walkthrough in the iOS Simulator" width="210">
+<img src="Eye%20Health%20Assistant%20Walkthrough%20in%20iOS%20Simulator.gif" alt="Eye Health assistant walkthrough in the iOS Simulator" width="210"> <img src="Eye%20Health%20Assistant%20Walkthrough%20in%20iOS%20Simulator%20(1).gif" alt="Eye Health assistant walkthrough in the iOS Simulator, continued" width="210">
 
 ## Editor Setup
 
